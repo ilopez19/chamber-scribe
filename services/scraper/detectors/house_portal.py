@@ -1,7 +1,9 @@
 import warnings
-import httpx
 from bs4 import BeautifulSoup
-from services.scraper.detectors.base import BaseDetector
+from services.scraper.detectors.base import HTTPDetector
+from services.scraper.http_utils import fetch_with_retry
+from services.scraper.filter_utils import DeduplicationTracker
+from services.scraper.metadata_utils import MetadataExtractor
 
 warnings.filterwarnings("ignore", message="Unverified HTTPS request")
 
@@ -9,50 +11,71 @@ BASE_URL = "https://house.mi.gov"
 LISTING_URL = f"{BASE_URL}/VideoArchive"
 DOWNLOAD_BASE = f"{BASE_URL}/ArchiveVideoFiles"
 
-class HousePortalDetector(BaseDetector):
+
+class HousePortalDetector(HTTPDetector):
+
+    def __init__(self):
+        super().__init__(timeout=30, verify=False)
+        self._dedup = DeduplicationTracker()
 
     @property
     def source_name(self) -> str:
         return "michigan_house"
 
     async def get_new_videos(self) -> list[dict]:
+        self._dedup = DeduplicationTracker()  # Reset deduplication tracker for each scrape
         videos = []
+        client = await self.get_client()
 
         try:
-            async with httpx.AsyncClient(timeout=30, verify=False) as client:
-                response = await client.get(LISTING_URL)
-                response.raise_for_status()
+            response = await fetch_with_retry(client, LISTING_URL)
+            soup = BeautifulSoup(response.text, "html.parser")
 
-                soup = BeautifulSoup(response.text, "html.parser")
+            items = []
+            for div in soup.find_all("div", class_="page-search-object"):
+                link = div.find("a", href=True)
+                if not link:
+                    continue
 
-                for div in soup.find_all("div", class_="page-search-object"):
-                    link = div.find("a", href=True)
-                    if not link:
-                        continue
+                href = link["href"]
+                if "VideoArchivePlayer?video=" not in href:
+                    continue
 
-                    href = link["href"]
-                    if "VideoArchivePlayer?video=" not in href:
-                        continue
+                filename = href.split("video=")[-1]
+                date_text = link.get_text(strip=True)
 
-                    filename = href.split("video=")[-1]
-                    date_text = link.get_text(strip=True)
-                    download_url = f"{DOWNLOAD_BASE}/{filename}"
+                items.append({
+                    "filename": filename,
+                    "date_text": date_text,
+                })
 
-                    videos.append({
-                        "video_url": download_url,
-                        "metadata": {
-                            "portal_id": filename.replace(".mp4", ""),
-                            "title":     filename.replace(".mp4", ""),
-                            "date_text": date_text,
-                            "filename":  filename,
-                            "portal":    self.source_name,
-                        }
-                    })
+            unseen_items = self._dedup.get_unseen_videos(items, id_key="filename")
 
-                    print(f"[{self.source_name}] Found: {filename} — {date_text}")
+            for item in unseen_items:
+                filename = item["filename"]
+                date_text = item["date_text"]
+                download_url = f"{DOWNLOAD_BASE}/{filename}"
+
+                metadata = MetadataExtractor.normalize_portal_metadata(
+                    item={},
+                    source_name=self.source_name,
+                    title=filename.replace(".mp4", ""),
+                    portal_id=filename.replace(".mp4", ""),
+                    date_text=date_text,
+                    filename=filename,
+                )
+
+                video_record = MetadataExtractor.build_video_record(
+                    video_url=download_url,
+                    metadata=metadata,
+                )
+
+                videos.append(video_record)
+                print(f"[{self.source_name}] Found: {filename} — {date_text}")
 
         except Exception as e:
             print(f"[{self.source_name}] Scrape failed: {e}")
-
-        print(f"[{self.source_name}] Total videos found: {len(videos)}")
+        finally:
+            await self.close_client()
+        print(f"[{self.source_name}] Total unique videos found: {len(videos)}")
         return videos
