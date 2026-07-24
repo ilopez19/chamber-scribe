@@ -10,9 +10,24 @@ from services.downloader.strategies.hls import HLSDownloadStrategy
 from services.downloader.strategies.http import HTTPDownloadStrategy
 from services.downloader.strategies.vtt import VTTDownloadStrategy
 
+"""Downloader service orchestration.
+
+This module queries pending jobs, builds download plans using business
+rules, and executes downloads using strategy implementations (HLS, HTTP,
+VTT). It includes retry semantics and batching to limit resource usage.
+"""
+
+MAX_RETRIES = 3
+
 
 def _get_strategy(strategy_name: str, job: dict):
-    """Return the correct strategy instance for a given strategy name."""
+    """Return the correct strategy instance for a given strategy name.
+
+    The HTTP strategy selectively disables SSL verification for known
+    problematic sources (e.g. Michigan House) where the remote site has
+    certificate issues. This is a pragmatic choice to allow scraping despite
+    external infra problems.
+    """
     source = job.get("source", "")
 
     if strategy_name == "hls":
@@ -20,6 +35,7 @@ def _get_strategy(strategy_name: str, job: dict):
     elif strategy_name == "vtt":
         return VTTDownloadStrategy()
     elif strategy_name == "http_audio":
+        # Disables SSL verification only for the specific source with bad certs
         verify_ssl = source != "michigan_house"
         return HTTPDownloadStrategy(verify_ssl=verify_ssl)
     else:
@@ -27,6 +43,7 @@ def _get_strategy(strategy_name: str, job: dict):
 
 
 async def _update_job(collection, job_id, update: dict):
+    """Apply a MongoDB update and stamp updated_at consistently."""
     await collection.update_one(
         {"_id": job_id},
         {"$set": {**update, "updated_at": datetime.now(timezone.utc)}},
@@ -34,12 +51,21 @@ async def _update_job(collection, job_id, update: dict):
 
 
 async def _download_job(job: dict, collection) -> None:
+    """Execute the download plan for a single job and update status.
+
+    Behavior notes:
+    - Skips downloads already present on disk to support idempotent retries.
+    - Collects completed file paths for storage on the job document.
+    """
     job_id = job["_id"]
     title = job.get("metadata", {}).get("title", str(job_id))
     captioned = job.get("metadata", {}).get("captioned", False)
+    retries = job.get("retries", 0)
 
     print(f"\n[downloader] Starting: {title}")
     print(f"[downloader] Captioned: {captioned}")
+    if retries > 0:
+        print(f"[downloader] Retry attempt {retries + 1}/{MAX_RETRIES}")
 
     # Build download plan from business rules
     plan = DownloadRules.build_plan(job)
@@ -60,7 +86,7 @@ async def _download_job(job: dict, collection) -> None:
         destination = item["destination"]
         strategy_name = item["strategy"]
 
-        # Skip if already on disk
+        # Skip if already on disk — supports retrying without re-downloading
         if os.path.exists(destination):
             print(f"[downloader] Already on disk: {destination}")
             completed.append(destination)
@@ -76,27 +102,48 @@ async def _download_job(job: dict, collection) -> None:
 
     # Update job based on results
     if failed:
-        print(f"[downloader] ❌ {len(failed)} download(s) failed: {title}")
+        new_retries = retries + 1
+        print(f"[downloader] {len(failed)} download(s) failed: {title}")
+        if new_retries >= MAX_RETRIES:
+            print(f"[downloader] Max retries ({MAX_RETRIES}) reached — giving up: {title}")
+
         await _update_job(collection, job_id, {
             "status": JobStatus.FAILED,
+            "failed_stage": "download",
             "error": f"Failed downloads: {failed}",
-            "retries": job.get("retries", 0) + 1,
+            "retries": new_retries,
         })
     else:
-        print(f"[downloader] ✅ All downloads complete: {title}")
+        print(f"[downloader] All downloads complete: {title}")
         await _update_job(collection, job_id, {
             "status": JobStatus.DOWNLOADED,
             "file_paths": completed,
             "downloaded_at": datetime.now(timezone.utc),
+            "failed_stage": None,
+            "error": None,
         })
 
 
 async def run_downloads() -> None:
+    """Main entry point: fetch pending jobs and run downloads in batches.
+
+    Batching prevents overloading local resources when many jobs queue up.
+    Pending jobs are processed before retries to prioritize new work.
+    """
     collection = jobs_collection()
 
-    # Fetch pending AND failed jobs — retry failures each cycle
+    # Fetch pending jobs and failed download jobs under the retry limit
     cursor = collection.find({
-        "status": {"$in": [JobStatus.PENDING, JobStatus.FAILED]}
+        "$or": [
+            # Fresh jobs ready to download
+            {"status": JobStatus.PENDING},
+            # Download failures under the retry limit
+            {
+                "status": JobStatus.FAILED,
+                "failed_stage": "download",
+                "retries": {"$lt": MAX_RETRIES},
+            },
+        ]
     })
     jobs = await cursor.to_list(length=None)
 
