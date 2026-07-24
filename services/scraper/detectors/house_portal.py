@@ -5,6 +5,9 @@ from services.scraper.http_utils import fetch_with_retry
 from services.scraper.filter_utils import DeduplicationTracker
 from services.scraper.metadata_utils import MetadataExtractor
 
+# The House site has certificate problems; ignore the related warnings to
+# avoid noisy logs. The HTTP strategy explicitly disables verification when
+# communicating with this host.
 warnings.filterwarnings("ignore", message="Unverified HTTPS request")
 
 BASE_URL = "https://house.mi.gov"
@@ -15,6 +18,7 @@ DOWNLOAD_BASE = f"{BASE_URL}/ArchiveVideoFiles"
 class HousePortalDetector(HTTPDetector):
 
     def __init__(self):
+        # Server uses invalid certs; detector and strategies handle verification
         super().__init__(timeout=30, verify=False)
         self._dedup = DeduplicationTracker()
 
@@ -23,6 +27,13 @@ class HousePortalDetector(HTTPDetector):
         return "michigan_house"
 
     async def get_new_videos(self) -> list[dict]:
+        """Scrape the public video archive page and return unique video records.
+
+        The detector parses HTML listings for video links, extracts filenames
+        used to build download URLs, and normalizes metadata. Deduplication is
+        reset per-run so repeats across runs are handled by the jobs collection
+        uniqueness.
+        """
         self._dedup = DeduplicationTracker()  # Reset deduplication tracker for each scrape
         videos = []
         client = await self.get_client()
@@ -74,6 +85,7 @@ class HousePortalDetector(HTTPDetector):
                 print(f"[{self.source_name}] Found: {filename} — {date_text}")
 
         except Exception as e:
+            # Surface parsing failures but don't crash the whole scraper
             print(f"[{self.source_name}] Scrape failed: {e}")
         finally:
             await self.close_client()
