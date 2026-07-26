@@ -63,7 +63,7 @@ class DownloadRules:
             # "ch1"), not one-time recordings — confirmed via the portal's
             # getLive/infoLive API, so they're skipped rather than guessed at.
             if title.lower().startswith("live stream") or title.strip().lower() in ("", "untitled"):
-                logger.info(f"[rules] Senate — skipping live-channel entry (no stable recording): {title or 'untitled'}")
+                logger.info(f"[rules] Senate - skipping live-channel entry (no stable recording): {title or 'untitled'}")
                 return plan
 
             # The portal's own transcoding can lag behind discovery — a video
@@ -72,7 +72,7 @@ class DownloadRules:
             # Defaults to True (attempt download) if the field is missing,
             # rather than silently never downloading a job with incomplete metadata.
             if not metadata.get("transcoded", True):
-                logger.info(f"[rules] Senate — not yet transcoded, will retry later: {title or portal_id}")
+                logger.info(f"[rules] Senate - not yet transcoded, will retry later: {title or portal_id}")
                 plan.mark_not_ready()
                 return plan
 
@@ -82,7 +82,7 @@ class DownloadRules:
                 vtt_url = CAPTION_URL_TEMPLATE.format(portal_id=portal_id)
                 plan.add(vtt_url, vtt_dest, "vtt")
 
-                logger.info(f"[rules] Senate captioned — VTT only: {portal_id}")
+                logger.info(f"[rules] Senate captioned - VTT only: {portal_id}")
 
             else:
                 # No captions — fall back to HLS audio for Whisper to transcribe.
@@ -90,7 +90,7 @@ class DownloadRules:
                 audio_url = AUDIO_URL_TEMPLATE.format(portal_id=portal_id)
                 plan.add(audio_url, audio_dest, "hls")
 
-                logger.info(f"[rules] Senate uncaptioned — audio only: {portal_id}")
+                logger.info(f"[rules] Senate uncaptioned - audio only: {portal_id}")
 
         # ── Rule: Michigan House ──────────────────────────────────────────────
         elif source == "michigan_house":
@@ -102,10 +102,10 @@ class DownloadRules:
             audio_dest = f"{DownloadRules.AUDIO_DIR}/{source}/{stem}.mp3"
             plan.add(video_url, audio_dest, "http_audio_extract")
 
-            logger.info(f"[rules] House — extracting audio: {filename}")
+            logger.info(f"[rules] House - extracting audio: {filename}")
 
         # ── Fallback: unknown source ──────────────────────────────────────────
         else:
-            logger.info(f"[rules] No rule defined for source: {source} — skipping")
+            logger.info(f"[rules] No rule defined for source: {source} - skipping")
 
         return plan

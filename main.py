@@ -87,7 +87,7 @@ def run_forever():
         started_at = time.monotonic()
         try:
             asyncio.run(main())
-            logger.error("[main] Pipeline exited unexpectedly (loops should run forever) — restarting.")
+            logger.error("[main] Pipeline exited unexpectedly (loops should run forever) - restarting.")
         except KeyboardInterrupt:
             logger.info("[main] Stopped by user.")
             break

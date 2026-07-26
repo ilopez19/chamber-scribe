@@ -50,7 +50,7 @@ class HTTPAudioExtractStrategy(BaseDownloadStrategy):
                     process.communicate(), timeout=DOWNLOAD_TIMEOUT
                 )
             except asyncio.TimeoutError:
-                logger.error(f"[http_audio] ❌ FFmpeg timed out after {DOWNLOAD_TIMEOUT}s — killing: {url}")
+                logger.error(f"[http_audio] FFmpeg timed out after {DOWNLOAD_TIMEOUT}s - killing: {url}")
                 process.kill()
                 await process.wait()
                 self._cleanup_partial(destination)
@@ -60,21 +60,21 @@ class HTTPAudioExtractStrategy(BaseDownloadStrategy):
                 # Decimal MB (1e6), not binary MiB (2**20) — matches every
                 # other size calc in this codebase.
                 size_mb = round(os.path.getsize(destination) / 1_000_000, 1)
-                logger.info(f"[http_audio] ✅ Audio extracted: {destination} ({size_mb}MB)")
+                logger.info(f"[http_audio] Audio extracted: {destination} ({size_mb}MB)")
                 return True
             else:
                 error = stderr.decode()[-500:]
-                logger.error(f"[http_audio] ❌ FFmpeg failed: {error}")
+                logger.error(f"[http_audio] FFmpeg failed: {error}")
                 # See hls.py: a failed run can leave a partial file the
                 # "already on disk" check would treat as complete forever.
                 self._cleanup_partial(destination)
                 return False
 
         except FileNotFoundError:
-            logger.error("[http_audio] ❌ FFmpeg not found — make sure it's on PATH")
+            logger.error("[http_audio] FFmpeg not found - make sure it's on PATH")
             return False
         except Exception as e:
-            logger.error(f"[http_audio] ❌ Unexpected error: {e}")
+            logger.error(f"[http_audio] Unexpected error: {e}")
             if process is not None and process.returncode is None:
                 process.kill()
                 await process.wait()

@@ -64,7 +64,7 @@ async def _scrape_with_retry(detector) -> list[dict]:
     config = get_portal_config(source)
 
     if not config:
-        logger.warning(f"[scraper] WARNING: No portal config found for '{source}' — skipping validation")
+        logger.warning(f"[scraper] WARNING: No portal config found for '{source}' - skipping validation")
         try:
             return await detector.get_new_videos()
         except Exception as e:
@@ -83,7 +83,7 @@ async def _scrape_with_retry(detector) -> list[dict]:
             # video found still gets queued below either way.
             is_valid, reason = validate_videos(videos, config)
             if not is_valid:
-                logger.warning(f"[scraper] ⚠️  Validation warning for {config.display_name}: {reason}")
+                logger.warning(f"[scraper] Validation warning for {config.display_name}: {reason}")
                 _alert(
                     source_name=source,
                     message=f"Validation warning (videos still queued as usual): {reason}",
@@ -170,7 +170,7 @@ async def run_scrape():
                 if existing is None:
                     # Brand new video — insert as normal.
                     res = await collection.insert_one(job)
-                    logger.info(f"[scraper] New job created: {res.inserted_id} — {title}")
+                    logger.info(f"[scraper] New job created: {res.inserted_id} - {title}")
                     total_new += 1
 
                 elif (

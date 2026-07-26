@@ -48,7 +48,7 @@ class HLSDownloadStrategy(BaseDownloadStrategy):
                     process.communicate(), timeout=DOWNLOAD_TIMEOUT
                 )
             except asyncio.TimeoutError:
-                logger.error(f"[hls] ❌ FFmpeg timed out after {DOWNLOAD_TIMEOUT}s — killing: {url}")
+                logger.error(f"[hls] FFmpeg timed out after {DOWNLOAD_TIMEOUT}s - killing: {url}")
                 process.kill()
                 await process.wait()
                 self._remove_partial_file(destination)
@@ -58,21 +58,21 @@ class HLSDownloadStrategy(BaseDownloadStrategy):
                 # Decimal MB (1e6), not binary MiB (2**20) — matches every
                 # other size calc in this codebase.
                 size_mb = round(os.path.getsize(destination) / 1_000_000, 1)
-                logger.info(f"[hls] ✅ Audio extracted: {destination} ({size_mb}MB)")
+                logger.info(f"[hls] Audio extracted: {destination} ({size_mb}MB)")
                 return True
             else:
                 error = stderr.decode()[-500:]
-                logger.error(f"[hls] ❌ FFmpeg failed: {error}")
+                logger.error(f"[hls] FFmpeg failed: {error}")
                 # A failed run can leave a partial file that the downloader's
                 # "already on disk" check would treat as complete forever.
                 self._remove_partial_file(destination)
                 return False
 
         except FileNotFoundError:
-            logger.error("[hls] ❌ FFmpeg not found — make sure it's on PATH")
+            logger.error("[hls] FFmpeg not found - make sure it's on PATH")
             return False
         except Exception as e:
-            logger.error(f"[hls] ❌ Unexpected error: {e}")
+            logger.error(f"[hls] Unexpected error: {e}")
             if process is not None and process.returncode is None:
                 process.kill()
                 await process.wait()

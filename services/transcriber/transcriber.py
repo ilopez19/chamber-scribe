@@ -62,7 +62,7 @@ def _pick_engine(job: dict, vtt_path: str | None):
             return vtt_engine, "vtt"
         # Metadata claims captions but the file is missing — fall back to
         # Whisper rather than failing outright; guards against transient issues.
-        logger.warning(f"[transcriber] Captioned=True but no VTT found (vtt_path={vtt_path}) — falling back to Whisper")
+        logger.warning(f"[transcriber] Captioned=True but no VTT found (vtt_path={vtt_path}) - falling back to Whisper")
 
     return whisper_engine, "whisper"
 
@@ -133,7 +133,7 @@ async def run_transcriptions() -> None:
         if not audio_path and not vtt_path:
             # A job reaching transcription with no recorded file is unexpected
             # (the downloader shouldn't mark anything DOWNLOADED without one).
-            logger.warning(f"[transcriber] No audio or VTT file for: {title} — marking failed")
+            logger.warning(f"[transcriber] No audio or VTT file for: {title} - marking failed")
             await _update_job(jobs_col, job_id, {
                 "status": JobStatus.FAILED,
                 "failed_stage": "transcription",
@@ -149,7 +149,7 @@ async def run_transcriptions() -> None:
         if not worth_it:
             # A business decision (e.g. too short), not a failure — EXCLUDED
             # so the scraper's re-queue logic (which only resets FAILED) leaves it alone.
-            logger.info(f"[transcriber] Excluding (not worth transcribing): {title} — {skip_reason}")
+            logger.info(f"[transcriber] Excluding (not worth transcribing): {title} - {skip_reason}")
             await _update_job(jobs_col, job_id, {
                 "status": JobStatus.EXCLUDED,
                 "failed_stage": "transcription",
@@ -273,7 +273,7 @@ async def run_transcriptions() -> None:
                 if engine_name == "vtt":
                     # A one-time engine switch, not a retry — doesn't consume
                     # the retry budget; loop immediately re-attempts with Whisper.
-                    logger.warning(f"[transcriber] VTT failed ({e}) — falling back to Whisper")
+                    logger.warning(f"[transcriber] VTT failed ({e}) - falling back to Whisper")
                     engine, engine_name = whisper_engine, "whisper"
                     await _update_job(jobs_col, job_id, {
                         "status": JobStatus.PROCESSING,
@@ -283,7 +283,7 @@ async def run_transcriptions() -> None:
                     continue
 
                 retries += 1
-                logger.warning(f"[transcriber] Failed ({retries}/{MAX_RETRIES}): {title} — {e}")
+                logger.warning(f"[transcriber] Failed ({retries}/{MAX_RETRIES}): {title} - {e}")
                 await _update_job(jobs_col, job_id, {
                     "status": JobStatus.FAILED,
                     "failed_stage": "transcription",
@@ -292,7 +292,7 @@ async def run_transcriptions() -> None:
                 })
 
                 if retries >= MAX_RETRIES:
-                    logger.error(f"[transcriber] Max retries ({MAX_RETRIES}) reached — giving up: {title}")
+                    logger.error(f"[transcriber] Max retries ({MAX_RETRIES}) reached - giving up: {title}")
                     # Clean up the audio file so a permanently-failed job
                     # doesn't hold onto disk space forever.
                     for path in file_paths:

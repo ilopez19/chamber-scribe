@@ -40,6 +40,6 @@ async def fetch_with_retry(
         except (httpx.RequestError, httpx.HTTPStatusError) as e:
             if attempt >= max_retries:
                 raise  # Re-raise on final attempt
-            logger.warning(f"[http_utils] Retry {attempt + 1}/{max_retries} after {delay}s: {url} — {e}")
+            logger.warning(f"[http_utils] Retry {attempt + 1}/{max_retries} after {delay}s: {url} - {e}")
             await asyncio.sleep(delay)
             delay *= 2  # Exponential backoff

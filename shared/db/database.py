@@ -64,7 +64,7 @@ def health_collection():
 # confusing error surfacing later from the first real query.
 async def ping():
     await get_client().admin.command("ping")
-    logger.info(f"✅ Connected to MongoDB: {MONGO_DB_NAME}")
+    logger.info(f"Connected to MongoDB: {MONGO_DB_NAME}")
 
 
 # Atomically claims every job matching `query`, so two overlapping

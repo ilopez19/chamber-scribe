@@ -24,9 +24,9 @@ class VTTDownloadStrategy(BaseDownloadStrategy):
                 # Decimal KB (1e3), not binary KiB (2**10) — same convention
                 # as every other size calc in this codebase.
                 size_kb = round(os.path.getsize(destination) / 1_000, 1)
-                logger.info(f"[vtt] ✅ Downloaded: {destination} ({size_kb}KB)")
+                logger.info(f"[vtt] Downloaded: {destination} ({size_kb}KB)")
                 return True
 
         except Exception as e:
-            logger.error(f"[vtt] ❌ Failed: {url} — {e}")
+            logger.error(f"[vtt] Failed: {url} - {e}")
             return False

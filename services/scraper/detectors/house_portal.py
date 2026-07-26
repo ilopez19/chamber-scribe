@@ -84,7 +84,7 @@ class HousePortalDetector(HTTPDetector):
                 )
 
                 videos.append(video_record)
-                logger.info(f"[{self.SOURCE_NAME}] Found: {filename} — {date_text}")
+                logger.info(f"[{self.SOURCE_NAME}] Found: {filename} - {date_text}")
 
         except Exception as e:
             # Surface parsing failures but don't crash the whole scraper

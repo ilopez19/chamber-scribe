@@ -88,7 +88,7 @@ async def _download_job(job: dict, collection) -> None:
         # An empty plan means rules.py deliberately skipped this job
         # (unknown source, or a business rule like the live-channel
         # exclusion) — not a failure, so it's EXCLUDED, not FAILED.
-        logger.info(f"[downloader] No download plan for: {title} — excluding")
+        logger.info(f"[downloader] No download plan for: {title} - excluding")
         await _update_job(collection, job_id, {
             "status": JobStatus.EXCLUDED,
             "failed_stage": "download",
@@ -123,7 +123,7 @@ async def _download_job(job: dict, collection) -> None:
         new_retries = retries + 1
         logger.warning(f"[downloader] {len(failed)} download(s) failed: {title}")
         if new_retries >= MAX_RETRIES:
-            logger.error(f"[downloader] Max retries ({MAX_RETRIES}) reached — giving up: {title}")
+            logger.error(f"[downloader] Max retries ({MAX_RETRIES}) reached - giving up: {title}")
 
         await _update_job(collection, job_id, {
             "status": JobStatus.FAILED,
@@ -173,7 +173,7 @@ async def run_downloads() -> None:
     pending = [j for j in claimed if j.get("retries", 0) == 0]
     retrying = [j for j in claimed if j.get("retries", 0) > 0]
 
-    logger.info(f"[downloader] {len(pending)} pending, {len(retrying)} retrying — batch size: {BATCH_SIZE}")
+    logger.info(f"[downloader] {len(pending)} pending, {len(retrying)} retrying - batch size: {BATCH_SIZE}")
 
     all_jobs = pending + retrying
     batches = [

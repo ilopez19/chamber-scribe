@@ -39,7 +39,7 @@ def get_model() -> WhisperModel:
 # on GPU would just burn the retry budget on a guaranteed repeat failure.
 def _fall_back_to_cpu():
     global _model, _device, _compute_type
-    logger.error("[whisper] CUDA runtime libraries not usable on this machine — falling back to CPU for the rest of this run.")
+    logger.error("[whisper] CUDA runtime libraries not usable on this machine - falling back to CPU for the rest of this run.")
     _device = "cpu"
     _compute_type = "int8"
     _model = None
