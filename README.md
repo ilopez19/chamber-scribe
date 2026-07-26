@@ -24,7 +24,7 @@ Please don't hesitate to ask any question, excited to chat!
 
 ## Setup
 
-**Requires:** Python 3.12+, [FFmpeg](https://ffmpeg.org/), and MongoDB.
+**Requires:** Python 3.12 exactly (not 3.11 or 3.13 — the install scripts check for this specifically), [FFmpeg](https://ffmpeg.org/), and MongoDB.
 
 **Windows:**
 
@@ -35,7 +35,7 @@ Please don't hesitate to ask any question, excited to chat!
 This installs Python dependencies into a venv, and FFmpeg + MongoDB via `winget` if you don't already have them; if Python itself isn't found, it asks before installing it too (never installs anything without asking first). At the end it offers to start the pipeline + API for you right there. Safe to re-run. To do it by hand instead:
 
 ```
-python -m venv venv
+py -3.12 -m venv venv
 venv\Scripts\activate
 pip install -r requirements.txt
 pip install torch --index-url https://download.pytorch.org/whl/cu130
@@ -55,7 +55,7 @@ torch from plain pip is CPU-only. If you have an NVIDIA GPU, get a CUDA build in
 Same thing, using Homebrew instead of `winget` for FFmpeg/MongoDB, and the same ask-before-installing-Python and offer-to-start-at-the-end behavior. If it's not executable yet (`Permission denied`), run `chmod +x macos-linux/*.sh` once, or just `bash macos-linux/install.sh`. Note: `windows\install.ps1` will NOT run in a Mac/Linux shell — it's PowerShell, not bash, and needs `macos-linux/install.sh` instead. By hand instead of the script:
 
 ```
-python3 -m venv venv
+python3.12 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 pip install torch

@@ -25,6 +25,36 @@ function Write-Step($msg) {
     Write-Host "== $msg ==" -ForegroundColor Cyan
 }
 
+# This project requires exactly Python 3.12 (not 3.11, not 3.13) - checked
+# by version, not just presence, since a machine can easily have some other
+# Python on PATH already. The 'py' launcher (installed alongside Python on
+# Windows, including by winget's Python.Python.3.12) tracks every installed
+# version separately and can select 3.12 specifically even if a different
+# version is what 'python' resolves to - so it's checked first.
+function Get-Python312Command {
+    if (Test-CommandExists "py") {
+        $v = & py -3.12 -c "import sys; print(sys.version_info[0], sys.version_info[1])" 2>$null
+        if ($LASTEXITCODE -eq 0 -and $v -eq "3 12") {
+            return "py -3.12"
+        }
+    }
+    if (Test-CommandExists "python") {
+        $v = & python -c "import sys; print(sys.version_info[0], sys.version_info[1])" 2>$null
+        if ($LASTEXITCODE -eq 0 -and $v -eq "3 12") {
+            return "python"
+        }
+    }
+    return $null
+}
+
+function Invoke-Python312([string[]]$PyArgs) {
+    if ($script:python312 -eq "py -3.12") {
+        & py -3.12 @PyArgs
+    } else {
+        & python @PyArgs
+    }
+}
+
 # -- 0. Sanity checks ---------------------------------------------------------
 Write-Step "Checking prerequisites"
 
@@ -33,8 +63,9 @@ if (-not $hasWinget) {
     Write-Host "winget not found - FFmpeg/MongoDB/Python auto-install will be skipped. Install App Installer from the Microsoft Store to get winget, or install them manually (links below if needed)." -ForegroundColor Yellow
 }
 
-if (-not (Test-CommandExists "python")) {
-    Write-Host "Python not found on PATH." -ForegroundColor Yellow
+$python312 = Get-Python312Command
+if (-not $python312) {
+    Write-Host "Python 3.12 not found (this project requires exactly 3.12 - a different version already on PATH isn't enough)." -ForegroundColor Yellow
 
     if ($hasWinget) {
         $installPython = Read-Host "Install Python 3.12 now via winget? (y/N)"
@@ -43,29 +74,35 @@ if (-not (Test-CommandExists "python")) {
 
             # winget registers the new PATH entry in the registry, but this
             # terminal's own $env:Path was loaded at session start and won't
-            # see it - reload from the registry so 'python' works without
-            # having to close and reopen the terminal.
+            # see it - reload from the registry so the new install works
+            # without having to close and reopen the terminal.
             $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
+            $python312 = Get-Python312Command
         } else {
             Write-Host "Skipping Python install." -ForegroundColor Yellow
         }
     }
 
-    if (-not (Test-CommandExists "python")) {
-        Write-Host "Python still not found on PATH. Install Python 3.12+ from https://www.python.org/downloads/ (check 'Add python.exe to PATH' during install), close and reopen your terminal, then re-run this script." -ForegroundColor Red
+    if (-not $python312) {
+        Write-Host "Python 3.12 still not found. Install it from https://www.python.org/downloads/ (get 3.12 specifically - not a newer or older version - and check 'Add python.exe to PATH' during install), close and reopen your terminal, then re-run this script." -ForegroundColor Red
         exit 1
     }
-    Write-Host "Python is now available." -ForegroundColor Green
+    Write-Host "Python 3.12 is now available ($python312)." -ForegroundColor Green
 }
 
 # -- 1. Python virtual environment + dependencies -----------------------------
 Write-Step "Python virtual environment"
 
-if (-not (Test-Path ".\venv\Scripts\python.exe")) {
-    Write-Host "Creating venv..."
-    python -m venv venv
+if (Test-Path ".\venv\Scripts\python.exe") {
+    $venvVersion = & .\venv\Scripts\python.exe -c "import sys; print(sys.version_info[0], sys.version_info[1])" 2>$null
+    if ($venvVersion -ne "3 12") {
+        Write-Host "Existing venv is not Python 3.12 (found: $venvVersion). Delete the venv folder and re-run this script to rebuild it with 3.12." -ForegroundColor Red
+        exit 1
+    }
+    Write-Host "venv already exists (Python 3.12) - skipping creation."
 } else {
-    Write-Host "venv already exists - skipping creation."
+    Write-Host "Creating venv with Python 3.12..."
+    Invoke-Python312 @("-m", "venv", "venv")
 }
 
 Write-Step "Installing Python dependencies"

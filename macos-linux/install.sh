@@ -17,6 +17,26 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 step() { echo ""; echo "== $1 =="; }
 has() { command -v "$1" >/dev/null 2>&1; }
 
+# This project requires exactly Python 3.12 (not 3.11, not 3.13) - checked
+# by version, not just presence, since a machine can easily have some other
+# Python on PATH already. Homebrew installs versioned binaries like
+# python3.12 directly, so that's checked first; falls back to checking
+# whether plain python3 itself happens to already be 3.12.
+get_python312() {
+    if has python3.12; then
+        echo "python3.12"
+        return 0
+    fi
+    if has python3; then
+        v="$(python3 -c 'import sys; print(sys.version_info[0], sys.version_info[1])' 2>/dev/null)"
+        if [ "$v" = "3 12" ]; then
+            echo "python3"
+            return 0
+        fi
+    fi
+    return 1
+}
+
 # -- 0. Sanity checks ---------------------------------------------------------
 step "Checking prerequisites"
 
@@ -27,33 +47,40 @@ else
     echo "Homebrew not found - FFmpeg/MongoDB/Python auto-install will be skipped. Install it from https://brew.sh, or install things manually (links below if needed)."
 fi
 
-if ! has python3; then
-    echo "python3 not found."
+PYTHON312="$(get_python312 || true)"
+if [ -z "$PYTHON312" ]; then
+    echo "Python 3.12 not found (this project requires exactly 3.12 - a different version already on PATH isn't enough)."
 
     if [ "$HAS_BREW" -eq 1 ]; then
         read -r -p "Install Python 3.12 now via Homebrew? (y/N) " installPython
         if [ "$installPython" = "y" ] || [ "$installPython" = "Y" ]; then
             brew install python@3.12
+            PYTHON312="$(get_python312 || true)"
         else
             echo "Skipping Python install."
         fi
     fi
 
-    if ! has python3; then
-        echo "python3 still not found. Install Python 3.12+ (https://www.python.org/downloads/, or 'brew install python@3.12'), make sure it's on PATH, then re-run this script."
+    if [ -z "$PYTHON312" ]; then
+        echo "Python 3.12 still not found. Install it from https://www.python.org/downloads/ (get 3.12 specifically - not a newer or older version - or 'brew install python@3.12'), make sure it's on PATH, then re-run this script."
         exit 1
     fi
-    echo "Python is now available."
+    echo "Python 3.12 is now available ($PYTHON312)."
 fi
 
 # -- 1. Python virtual environment + dependencies -----------------------------
 step "Python virtual environment"
 
-if [ ! -f "venv/bin/python3" ]; then
-    echo "Creating venv..."
-    python3 -m venv venv
+if [ -f "venv/bin/python3" ]; then
+    VENV_VERSION="$(venv/bin/python3 -c 'import sys; print(sys.version_info[0], sys.version_info[1])' 2>/dev/null)"
+    if [ "$VENV_VERSION" != "3 12" ]; then
+        echo "Existing venv is not Python 3.12 (found: $VENV_VERSION). Delete the venv/ folder and re-run this script to rebuild it with 3.12."
+        exit 1
+    fi
+    echo "venv already exists (Python 3.12) - skipping creation."
 else
-    echo "venv already exists - skipping creation."
+    echo "Creating venv with Python 3.12..."
+    "$PYTHON312" -m venv venv
 fi
 
 step "Installing Python dependencies"

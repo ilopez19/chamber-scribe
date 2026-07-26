@@ -8,7 +8,7 @@ logger = get_logger(__name__)
 
 """Detector for the Michigan Senate video portal.
 
-This detector talks to the portal's JSON API across multiple tabs and emits
+This detector talks to the portal's paginated API to fetch all videos and emits
 normalized video records for every video it finds. Deduplication within a
 run is the only filtering done here — deciding whether a video is worth
 downloading or transcribing (transcoding status, access level, duration,
@@ -21,12 +21,9 @@ happened to reject it here — if it's ever worth reconsidering, the data's
 already captured.
 """
 
-# AWS API Gateway endpoint that serves the Senate's video catalog listings
-# (the six tabs below) as JSON — this is the API backing
-# cloud.castus.tv/vod/misenate, not something we host. The trailing path
-# segment (61b3adc8...) is this portal's fixed catalog/site ID within
-# that API, not a per-video identifier.
-SENATE_CATALOG_API_BASE_URL = "https://2kbyogxrg4.execute-api.us-west-2.amazonaws.com/61b3adc8124d7d000891ca5c"
+# Paginated API endpoint that returns all videos in the Senate catalog.
+# Replaces the old tab-based API; this returns all videos with pagination support.
+SENATE_ALL_VIDEOS_API_URL = "https://tf4pr3wftk.execute-api.us-west-2.amazonaws.com/default/api/all"
 
 # Where the actual media files live once a video's ID is known — see
 # rules.py, which builds the real download URL from CLOUDFRONT_BASE +
@@ -35,14 +32,6 @@ SENATE_CATALOG_API_BASE_URL = "https://2kbyogxrg4.execute-api.us-west-2.amazonaw
 # fetched from the portal's separate getLive/infoLive API — see rules.py.
 CLOUDFRONT_BASE = "https://dlttx48mxf9m3.cloudfront.net/outputs"
 
-TABS = {
-    "home":      "home/home",
-    "live":      "home/live",
-    "recent":    "home/recent",
-    "playlists": "home/playlists",
-    "featured":  "home/featured",
-    "popular":   "home/popular",
-}
 
 
 class SenatePortalDetector(HTTPDetector):
@@ -59,22 +48,33 @@ class SenatePortalDetector(HTTPDetector):
         return "michigan_senate"
 
     async def get_new_videos(self) -> list[dict]:
-        """Fetch videos across tabs, normalize, and return unique records.
+        """Fetch all videos via pagination, deduplicate, and return records.
 
-        The detector uses the DeduplicationTracker to ensure the same video
-        appearing in multiple tabs is only processed once per run.
+        The detector uses the DeduplicationTracker to ensure no duplicate
+        videos are emitted from this run. Uses the single paginated /api/all
+        endpoint instead of scraping individual tabs.
         """
         self._dedup = DeduplicationTracker()
         videos = []
         client = await self.get_client()
 
-        for tab_name, tab_path in TABS.items():
-            logger.info(f"[{self.source_name}] Scraping tab: {tab_name}")
+        page = 0
+        while True:
+            logger.info(f"[{self.source_name}] Fetching page {page}")
             try:
-                response = await fetch_with_retry(client, f"{SENATE_CATALOG_API_BASE_URL}/{tab_path}")
+                # Fetch one page of results (up to 50 items per page)
+                url = f"{SENATE_ALL_VIDEOS_API_URL}?page={page}&limit=50"
+                response = await fetch_with_retry(client, url)
                 data = response.json()
 
-                items = data if isinstance(data, list) else data.get("results", [])
+                # Extract items from paginated response
+                items = data.get("record", []) if isinstance(data, dict) else data
+                if not items:
+                    # No more items — we've reached the end
+                    logger.info(f"[{self.source_name}] Pagination complete (no items on page {page})")
+                    break
+
+                # Deduplicate items within this run
                 unseen_items = self._dedup.get_unseen_videos(items, id_key="_id")
 
                 for item in unseen_items:
@@ -89,7 +89,8 @@ class SenatePortalDetector(HTTPDetector):
                         portal_id=portal_id,
                         original_date=item.get("original_date"),
                         captioned=item.get("captioned", False),
-                        tab=tab_name,
+                        # No longer have a tab to record; omit or set to None
+                        tab=None,
                         # Recorded but no longer used to filter — kept in
                         # case a future business rule downstream cares.
                         transcoded=item.get("transcoded", False),
@@ -105,11 +106,13 @@ class SenatePortalDetector(HTTPDetector):
                     duration_mins = metadata.get("duration_mins", 0)
                     logger.info(f"[{self.source_name}] Found: {filename} ({duration_mins} mins)")
 
+                # Move to next page
+                page += 1
+
             except Exception as e:
-                # Don't stop the whole scrape on a single tab failure; keep
-                # trying remaining tabs so partial data can still be retrieved.
-                logger.warning(f"[{self.source_name}] Failed on tab {tab_name}: {e}")
-                continue
+                # Log the error but stop pagination (assume API is unhealthy)
+                logger.warning(f"[{self.source_name}] Failed on page {page}: {e}")
+                break
 
         logger.info(f"[{self.source_name}] Total unique videos found: {len(videos)}")
         return videos
