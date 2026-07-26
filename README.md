@@ -124,17 +124,17 @@ Each pair is the pipeline (scraper + downloader + transcriber loops) and the RES
 ## Where things live
 
 ```
-main.py                    Entry point — starts the scraper/downloader/transcriber loops under a restart-with-backoff wrapper
+main.py                     Entry point — starts the scraper/downloader/transcriber loops under a restart-with-backoff wrapper
 
-windows/                   Windows setup/lifecycle scripts (PowerShell + .bat)
-  install.ps1                One-time setup: Python deps, FFmpeg, MongoDB
-  uninstall.ps1               Reverses install.ps1 — removes venv, uninstalls FFmpeg/MongoDB
-  run.bat                     Activates the venv and runs main.py (foreground)
-  start.ps1                   Starts pipeline + API in the background, PIDs tracked in .run/
-  stop.ps1                    Stops whatever start.ps1 started
-  restart.ps1                 stop.ps1 then start.ps1
+windows/                    Windows setup/lifecycle scripts (PowerShell + .bat)
+  install.ps1                  One-time setup: Python deps, FFmpeg, MongoDB
+  uninstall.ps1                Reverses install.ps1 — removes venv, uninstalls FFmpeg/MongoDB
+  run.bat                      Activates the venv and runs main.py (foreground)
+  start.ps1                    Starts pipeline + API in the background, PIDs tracked in .run/
+  stop.ps1                     Stops whatever start.ps1 started
+  restart.ps1                  stop.ps1 then start.ps1
 
-macos-linux/               macOS/Linux setup/lifecycle scripts (bash) — same jobs as windows/, one per file
+macos-linux/                macOS/Linux setup/lifecycle scripts (bash) — same jobs as windows/, one per file
   install.sh
   uninstall.sh
   run.sh
@@ -142,19 +142,20 @@ macos-linux/               macOS/Linux setup/lifecycle scripts (bash) — same j
   stop.sh
   restart.sh
 
-pytest.ini                 Test config
-requirements-dev.txt       Adds pytest on top of requirements.txt
+pytest.ini                  Test config
+requirements-dev.txt        Adds pytest on top of requirements.txt
 
-api/                       REST API (FastAPI)
-  main.py                    App setup — run with uvicorn, not directly
-  routes/                    One file per resource: jobs.py, transcripts.py, tasks.py, health.py
+api/                        REST API (FastAPI)
+  main.py                      App setup — run with uvicorn, not directly
+  routes/                      One file per resource: jobs.py, transcripts.py, tasks.py, health.py
 
-services/                  The three pipeline stages, one folder each
+services/                   The three pipeline stages, one folder each
   scraper/
-    scraper.py                Orchestrator — runs every detector, queues results into MongoDB
-    portal_registry.py        Per-portal settings (expected video count, required fields, retries)
-    detectors/                One file per portal: senate_portal.py, house_portal.py
-    filter_utils.py, http_utils.py, metadata_utils.py    Shared helpers used by detectors
+    scraper.py                 Orchestrator — runs every detector, queues results into MongoDB
+    portal_registry.py         Per-portal settings (expected video count, required fields, retries)
+    detectors/                 One file per portal: senate_portal.py, house_portal.py
+    filter_utils.py, http_utils.py, metadata_utils.py
+                               Shared helpers used by detectors
   downloader/
     downloader.py              Orchestrator — works through queued jobs
     rules.py                   Decides *how* to download a job (which strategy, what filename)
@@ -163,19 +164,19 @@ services/                  The three pipeline stages, one folder each
     transcriber.py             Orchestrator — has should_transcribe() and the retry loop
     engines/                   whisper.py and vtt_engine.py — the two ways to get text from audio
 
-shared/                    Code every stage depends on
-  config.py                  Loads .env, defines JOB_MAX_RETRIES
-  logging_config.py           Central logging setup — get_logger(__name__)
-  db/database.py              MongoDB connection, claim_jobs() (atomic job claiming), heartbeat()
-  db/models/                  One file per collection: job.py, transcript.py, task.py
+shared/                     Code every stage depends on
+  config.py                    Loads .env, defines JOB_MAX_RETRIES
+  logging_config.py            Central logging setup — get_logger(__name__)
+  db/database.py               MongoDB connection, claim_jobs() (atomic job claiming), heartbeat()
+  db/models/                   One file per collection: job.py, transcript.py, task.py
 
-tests/                     pytest suite — see "Notes for contributors" below
+tests/                      pytest suite — see "Notes for contributors" below
 
-storage/                   Downloaded audio/captions (gitignored, created at runtime)
+storage/                    Downloaded audio/captions (gitignored, created at runtime)
 
-logs/                      Output from start.ps1/start.sh's background mode only (gitignored, auto-created).
-                           run.bat/run.sh print straight to your terminal instead, so this stays empty then.
-.run/                      PID files start.ps1/start.sh use to track/stop the background process (gitignored).
+logs/                       Output from start.ps1/start.sh's background mode only (gitignored, auto-created).
+                            run.bat/run.sh print straight to your terminal instead, so this stays empty then.
+.run/                       PID files start.ps1/start.sh use to track/stop the background process (gitignored).
 ```
 
 **Rule of thumb:** each pipeline stage only imports from its own folder or `shared/` — never from another stage's folder. If you're adding a new portal, only `scraper/` changes; a new download method, only `downloader/`; and so on.
