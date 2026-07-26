@@ -2,13 +2,18 @@ import asyncio
 import os
 from datetime import datetime, timezone
 
-from shared.db.database import jobs_collection
+from shared.config import JOB_MAX_RETRIES
+from shared.db.database import jobs_collection, claim_jobs
 from shared.db.models.job import JobStatus
 from services.downloader.config import BATCH_SIZE
 from services.downloader.rules import DownloadRules
 from services.downloader.strategies.hls import HLSDownloadStrategy
 from services.downloader.strategies.http import HTTPDownloadStrategy
+from services.downloader.strategies.http_audio import HTTPAudioExtractStrategy
 from services.downloader.strategies.vtt import VTTDownloadStrategy
+from shared.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 """Downloader service orchestration.
 
@@ -17,7 +22,7 @@ rules, and executes downloads using strategy implementations (HLS, HTTP,
 VTT). It includes retry semantics and batching to limit resource usage.
 """
 
-MAX_RETRIES = 3
+MAX_RETRIES = JOB_MAX_RETRIES
 
 
 def _get_strategy(strategy_name: str, job: dict):
@@ -38,6 +43,10 @@ def _get_strategy(strategy_name: str, job: dict):
         # Disables SSL verification only for the specific source with bad certs
         verify_ssl = source != "michigan_house"
         return HTTPDownloadStrategy(verify_ssl=verify_ssl)
+    elif strategy_name == "http_audio_extract":
+        # Disables SSL verification only for the specific source with bad certs
+        verify_ssl = source != "michigan_house"
+        return HTTPAudioExtractStrategy(verify_ssl=verify_ssl)
     else:
         raise ValueError(f"Unknown strategy: {strategy_name}")
 
@@ -62,22 +71,32 @@ async def _download_job(job: dict, collection) -> None:
     captioned = job.get("metadata", {}).get("captioned", False)
     retries = job.get("retries", 0)
 
-    print(f"\n[downloader] Starting: {title}")
-    print(f"[downloader] Captioned: {captioned}")
+    logger.info(f"\n[downloader] Starting: {title}")
+    logger.info(f"[downloader] Captioned: {captioned}")
     if retries > 0:
-        print(f"[downloader] Retry attempt {retries + 1}/{MAX_RETRIES}")
+        logger.warning(f"[downloader] Retry attempt {retries + 1}/{MAX_RETRIES}")
 
     # Build download plan from business rules
     plan = DownloadRules.build_plan(job)
 
     if plan.is_empty():
-        print(f"[downloader] No download plan for: {title} — skipping")
-        await _update_job(collection, job_id, {"status": JobStatus.SKIPPED})
+        # An empty plan means DownloadRules deliberately decided not to
+        # download this job (unknown source, or a business-rule skip like
+        # rules.py's live-channel exclusion) — not a failed attempt, so it
+        # gets its own status rather than FAILED. Unlike FAILED, EXCLUDED
+        # jobs are never reset to pending by the scraper's re-queue logic,
+        # since the reason for excluding them won't change on rediscovery.
+        logger.info(f"[downloader] No download plan for: {title} — excluding")
+        await _update_job(collection, job_id, {
+            "status": JobStatus.EXCLUDED,
+            "failed_stage": "download",
+            "error": "No download strategy matched this job (empty plan)",
+        })
         return
 
-    # Mark as downloading
-    await _update_job(collection, job_id, {"status": JobStatus.DOWNLOADING})
-
+    # No separate "mark as downloading" update here — claim_jobs() already
+    # transitioned this job to DOWNLOADING atomically as part of picking
+    # it up, in run_downloads() below.
     completed = []
     failed = []
 
@@ -88,7 +107,7 @@ async def _download_job(job: dict, collection) -> None:
 
         # Skip if already on disk — supports retrying without re-downloading
         if os.path.exists(destination):
-            print(f"[downloader] Already on disk: {destination}")
+            logger.info(f"[downloader] Already on disk: {destination}")
             completed.append(destination)
             continue
 
@@ -103,9 +122,9 @@ async def _download_job(job: dict, collection) -> None:
     # Update job based on results
     if failed:
         new_retries = retries + 1
-        print(f"[downloader] {len(failed)} download(s) failed: {title}")
+        logger.warning(f"[downloader] {len(failed)} download(s) failed: {title}")
         if new_retries >= MAX_RETRIES:
-            print(f"[downloader] Max retries ({MAX_RETRIES}) reached — giving up: {title}")
+            logger.error(f"[downloader] Max retries ({MAX_RETRIES}) reached — giving up: {title}")
 
         await _update_job(collection, job_id, {
             "status": JobStatus.FAILED,
@@ -114,7 +133,7 @@ async def _download_job(job: dict, collection) -> None:
             "retries": new_retries,
         })
     else:
-        print(f"[downloader] All downloads complete: {title}")
+        logger.info(f"[downloader] All downloads complete: {title}")
         await _update_job(collection, job_id, {
             "status": JobStatus.DOWNLOADED,
             "file_paths": completed,
@@ -125,49 +144,60 @@ async def _download_job(job: dict, collection) -> None:
 
 
 async def run_downloads() -> None:
-    """Main entry point: fetch pending jobs and run downloads in batches.
+    """Main entry point: claim pending/retryable jobs and run downloads in
+    batches.
 
     Batching prevents overloading local resources when many jobs queue up.
-    Pending jobs are processed before retries to prioritize new work.
+    Jobs are claimed atomically (see claim_jobs) before any work starts,
+    so this is safe to call even if a previous call is still finishing or
+    a second instance of this process is running — neither can end up
+    processing the same job as this one.
     """
     collection = jobs_collection()
 
-    # Fetch pending jobs and failed download jobs under the retry limit
-    cursor = collection.find({
-        "$or": [
-            # Fresh jobs ready to download
-            {"status": JobStatus.PENDING},
-            # Download failures under the retry limit
-            {
-                "status": JobStatus.FAILED,
-                "failed_stage": "download",
-                "retries": {"$lt": MAX_RETRIES},
-            },
-        ]
-    })
-    jobs = await cursor.to_list(length=None)
+    # Claiming transitions each matched job straight to DOWNLOADING as
+    # part of the same atomic operation that finds it — that's the fix
+    # for the race a separate find()-then-update leaves open. retries==0
+    # distinguishes a fresh PENDING job from a FAILED-and-retrying one for
+    # the log line below, since both now share the same DOWNLOADING status.
+    claimed = await claim_jobs(
+        collection,
+        query={
+            "$or": [
+                # Fresh jobs ready to download
+                {"status": JobStatus.PENDING},
+                # Download failures under the retry limit
+                {
+                    "status": JobStatus.FAILED,
+                    "failed_stage": "download",
+                    "retries": {"$lt": MAX_RETRIES},
+                },
+            ]
+        },
+        claimed_status=JobStatus.DOWNLOADING,
+    )
 
-    if not jobs:
-        print("[downloader] No pending or failed jobs.")
+    if not claimed:
+        logger.info("[downloader] No pending or failed jobs.")
         return
 
-    pending = [j for j in jobs if j.get("status") == JobStatus.PENDING]
-    failed = [j for j in jobs if j.get("status") == JobStatus.FAILED]
+    pending = [j for j in claimed if j.get("retries", 0) == 0]
+    retrying = [j for j in claimed if j.get("retries", 0) > 0]
 
-    print(f"[downloader] {len(pending)} pending, {len(failed)} retrying — batch size: {BATCH_SIZE}")
+    logger.info(f"[downloader] {len(pending)} pending, {len(retrying)} retrying — batch size: {BATCH_SIZE}")
 
     # Process pending first, then retries
-    all_jobs = pending + failed
+    all_jobs = pending + retrying
     batches = [
         all_jobs[i: i + BATCH_SIZE]
         for i in range(0, len(all_jobs), BATCH_SIZE)
     ]
 
     for batch_num, batch in enumerate(batches, start=1):
-        print(f"\n[downloader] Batch {batch_num}/{len(batches)}")
+        logger.info(f"\n[downloader] Batch {batch_num}/{len(batches)}")
         await asyncio.gather(*[
             _download_job(job, collection)
             for job in batch
         ])
 
-    print(f"\n[downloader] All batches complete.")
+    logger.info(f"\n[downloader] All batches complete.")

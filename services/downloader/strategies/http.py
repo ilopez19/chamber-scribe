@@ -8,6 +8,9 @@ from services.downloader.config import (
     DOWNLOAD_TIMEOUT,
 )
 from services.downloader.strategies.base import BaseDownloadStrategy
+from shared.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class HTTPDownloadStrategy(BaseDownloadStrategy):
@@ -42,8 +45,6 @@ class HTTPDownloadStrategy(BaseDownloadStrategy):
                     async with client.stream("GET", url) as response:
                         response.raise_for_status()
 
-                        response.raise_for_status()
-
                         # Check file size before downloading
                         total = int(response.headers.get("content-length", 0))
                         downloaded = 0
@@ -62,15 +63,27 @@ class HTTPDownloadStrategy(BaseDownloadStrategy):
                                     )
 
                         print()  # newline after progress
+
+                        # NOTE: the server can close the connection early (seen in
+                        # practice with House's flaky TLS setup) and aiter_bytes()
+                        # ends normally without raising. Without this check we'd
+                        # silently accept a truncated file as a successful download.
+                        if total and downloaded != total:
+                            os.remove(destination)
+                            raise httpx.RequestError(
+                                f"Incomplete download: got {downloaded}/{total} bytes",
+                                request=response.request,
+                            )
+
                         return True
 
             except (httpx.RequestError, httpx.HTTPStatusError) as e:
                 if attempt >= DOWNLOAD_MAX_RETRIES:
-                    print(f"\n[http] Failed after {DOWNLOAD_MAX_RETRIES} retries: {url} — {e}")
+                    logger.error(f"\n[http] Failed after {DOWNLOAD_MAX_RETRIES} retries: {url} — {e}")
                     return False
 
                 delay = DOWNLOAD_RETRY_DELAY * (2 ** attempt)
-                print(f"\n[http] Retry {attempt + 1}/{DOWNLOAD_MAX_RETRIES} in {delay}s — {e}")
+                logger.warning(f"\n[http] Retry {attempt + 1}/{DOWNLOAD_MAX_RETRIES} in {delay}s — {e}")
                 await asyncio.sleep(delay)
 
         return False

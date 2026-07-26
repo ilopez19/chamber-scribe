@@ -4,6 +4,9 @@ from services.scraper.detectors.base import HTTPDetector
 from services.scraper.http_utils import fetch_with_retry
 from services.scraper.filter_utils import DeduplicationTracker
 from services.scraper.metadata_utils import MetadataExtractor
+from shared.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 # The House site has certificate problems; ignore the related warnings to
 # avoid noisy logs. The HTTP strategy explicitly disables verification when
@@ -82,12 +85,12 @@ class HousePortalDetector(HTTPDetector):
                 )
 
                 videos.append(video_record)
-                print(f"[{self.source_name}] Found: {filename} — {date_text}")
+                logger.info(f"[{self.source_name}] Found: {filename} — {date_text}")
 
         except Exception as e:
             # Surface parsing failures but don't crash the whole scraper
-            print(f"[{self.source_name}] Scrape failed: {e}")
+            logger.warning(f"[{self.source_name}] Scrape failed: {e}")
         finally:
             await self.close_client()
-        print(f"[{self.source_name}] Total unique videos found: {len(videos)}")
+        logger.info(f"[{self.source_name}] Total unique videos found: {len(videos)}")
         return videos

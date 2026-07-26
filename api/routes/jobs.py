@@ -15,7 +15,7 @@ def _serialize(job: dict) -> dict:
 async def get_summary():
     """Count of jobs by status."""
     col = jobs_collection()
-    statuses = ["pending", "downloading", "downloaded", "processing", "transcribed", "failed", "skipped"]
+    statuses = ["pending", "downloading", "downloaded", "processing", "transcribed", "failed", "excluded"]
     summary = {}
     for status in statuses:
         count = await col.count_documents({"status": status})

@@ -1,0 +1,126 @@
+<svg viewBox="0 0 960 900" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <style>
+    svg { background: #ffffff; }
+    .box { fill: #f8fafc; stroke: #334155; stroke-width: 2; }
+    .boxlabel { fill: #0f172a; font-size: 15px; font-weight: 600; }
+    .boxsub { fill: #334155; font-size: 12px; }
+    .spine { stroke: #475569; stroke-width: 3; fill: none; }
+    .storageline { stroke: #1d4ed8; stroke-width: 2.5; fill: none; }
+    .storagelabel { fill: #1d4ed8; font-size: 11px; }
+    .healthline { stroke: #b91c1c; stroke-width: 2.5; stroke-dasharray: 6 5; fill: none; }
+    .healthlabel { fill: #b91c1c; font-size: 11px; }
+    .legendtext { fill: #0f172a; font-size: 12px; }
+    .legendbox { fill: #f8fafc; stroke: #94a3b8; stroke-width: 1; }
+    @media (prefers-color-scheme: dark) {
+      svg { background: #0f172a; }
+      .box { fill: #1e293b; stroke: #94a3b8; }
+      .boxlabel { fill: #f1f5f9; }
+      .boxsub { fill: #cbd5e1; }
+      .spine { stroke: #cbd5e1; }
+      .storageline { stroke: #60a5fa; }
+      .storagelabel { fill: #93c5fd; }
+      .healthline { stroke: #f87171; }
+      .healthlabel { fill: #fca5a5; }
+      .legendtext { fill: #f1f5f9; }
+      .legendbox { fill: #1e293b; stroke: #64748b; }
+    }
+  </style>
+
+  <defs>
+    <marker id="arrowGrey" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" class="spine" style="fill: context-stroke;"/>
+    </marker>
+    <marker id="arrowBlue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" class="storageline" style="fill: context-stroke;"/>
+    </marker>
+    <marker id="arrowRed" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" class="healthline" style="fill: context-stroke; stroke-dasharray: none;"/>
+    </marker>
+  </defs>
+
+  <!-- ===================== main pipeline spine (grey) ===================== -->
+  <line x1="450" y1="110" x2="450" y2="168" class="spine" marker-end="url(#arrowGrey)"/>
+  <line x1="450" y1="220" x2="450" y2="278" class="spine" marker-end="url(#arrowGrey)"/>
+  <line x1="450" y1="350" x2="450" y2="408" class="spine" marker-end="url(#arrowGrey)"/>
+  <line x1="450" y1="460" x2="450" y2="518" class="spine" marker-end="url(#arrowGrey)"/>
+  <line x1="450" y1="590" x2="450" y2="648" class="spine" marker-end="url(#arrowGrey)"/>
+  <line x1="450" y1="700" x2="450" y2="758" class="spine" marker-end="url(#arrowGrey)"/>
+
+  <!-- ===================== storage side-path (blue) — kept clear of the spine ===================== -->
+  <line x1="550" y1="315" x2="648" y2="315" class="storageline" marker-end="url(#arrowBlue)"/>
+  <text x="556" y="306" class="storagelabel" font-size="10">writes audio/VTT</text>
+
+  <polyline points="820,350 820,555 552,555" class="storageline" marker-end="url(#arrowBlue)"/>
+  <text x="826" y="470" class="storagelabel" font-size="10">reads audio/VTT</text>
+
+  <!-- ===================== health / heartbeat side-path (red, dashed) — kept clear of the spine ===================== -->
+  <polyline points="350,75 180,75 180,408" class="healthline" marker-end="url(#arrowRed)"/>
+  <polyline points="350,315 250,315 250,408" class="healthline" marker-end="url(#arrowRed)"/>
+  <polyline points="350,555 180,555 180,460" class="healthline" marker-end="url(#arrowRed)"/>
+  <text x="15" y="330" class="healthlabel" font-size="10">heartbeat every cycle</text>
+
+  <polyline points="80,460 80,795 348,795" class="healthline" marker-end="url(#arrowRed)"/>
+  <text x="90" y="650" class="healthlabel" font-size="10">GET /health reads this</text>
+
+  <!-- ===================== boxes ===================== -->
+
+  <!-- Scraper -->
+  <rect x="350" y="40" width="200" height="70" rx="8" class="box"/>
+  <text x="450" y="68" text-anchor="middle" class="boxlabel">Scraper</text>
+  <text x="450" y="88" text-anchor="middle" class="boxsub">senate_portal.py / house_portal.py</text>
+  <text x="450" y="103" text-anchor="middle" class="boxsub">records every video, filters nothing</text>
+
+  <!-- Mongo: jobs pending -->
+  <rect x="350" y="170" width="200" height="50" rx="8" class="box"/>
+  <text x="450" y="192" text-anchor="middle" class="boxlabel" font-size="13">MongoDB: jobs</text>
+  <text x="450" y="208" text-anchor="middle" class="boxsub">status = pending</text>
+
+  <!-- Downloader -->
+  <rect x="350" y="280" width="200" height="70" rx="8" class="box"/>
+  <text x="450" y="308" text-anchor="middle" class="boxlabel">Downloader</text>
+  <text x="450" y="328" text-anchor="middle" class="boxsub">claims jobs atomically</text>
+  <text x="450" y="343" text-anchor="middle" class="boxsub">(claim_jobs — no race on double-claim)</text>
+
+  <!-- Storage (moved clear of the spine) -->
+  <rect x="650" y="280" width="200" height="70" rx="8" class="box"/>
+  <text x="750" y="308" text-anchor="middle" class="boxlabel" font-size="13">storage/ (disk)</text>
+  <text x="750" y="326" text-anchor="middle" class="boxsub">audio/*.mp3</text>
+  <text x="750" y="341" text-anchor="middle" class="boxsub">captions/*.vtt</text>
+
+  <!-- Mongo: jobs downloaded -->
+  <rect x="350" y="410" width="200" height="50" rx="8" class="box"/>
+  <text x="450" y="432" text-anchor="middle" class="boxlabel" font-size="13">MongoDB: jobs</text>
+  <text x="450" y="448" text-anchor="middle" class="boxsub">status = downloaded</text>
+
+  <!-- Transcriber -->
+  <rect x="350" y="520" width="200" height="70" rx="8" class="box"/>
+  <text x="450" y="548" text-anchor="middle" class="boxlabel">Transcriber</text>
+  <text x="450" y="568" text-anchor="middle" class="boxsub">should_transcribe() gate, then</text>
+  <text x="450" y="583" text-anchor="middle" class="boxsub">VTT parse or Whisper</text>
+
+  <!-- Mongo: jobs + transcripts done -->
+  <rect x="350" y="650" width="200" height="50" rx="8" class="box"/>
+  <text x="450" y="672" text-anchor="middle" class="boxlabel" font-size="13">MongoDB: jobs + transcripts</text>
+  <text x="450" y="688" text-anchor="middle" class="boxsub">status = transcribed / failed / excluded</text>
+
+  <!-- API -->
+  <rect x="350" y="760" width="200" height="70" rx="8" class="box"/>
+  <text x="450" y="788" text-anchor="middle" class="boxlabel">REST API</text>
+  <text x="450" y="808" text-anchor="middle" class="boxsub">/jobs /transcripts /tasks</text>
+  <text x="450" y="823" text-anchor="middle" class="boxsub">/health (reads heartbeats, not RPC)</text>
+
+  <!-- Health collection -->
+  <rect x="60" y="410" width="220" height="50" rx="8" class="box"/>
+  <text x="170" y="432" text-anchor="middle" class="boxlabel" font-size="13">MongoDB: health</text>
+  <text x="170" y="448" text-anchor="middle" class="boxsub">one doc per loop, last_seen</text>
+
+  <!-- ===================== legend ===================== -->
+  <rect x="600" y="820" width="260" height="70" rx="6" class="legendbox"/>
+  <line x1="612" y1="836" x2="640" y2="836" class="spine"/>
+  <text x="648" y="840" class="legendtext">pipeline data flow (MongoDB)</text>
+  <line x1="612" y1="856" x2="640" y2="856" class="storageline"/>
+  <text x="648" y="860" class="legendtext">files on disk (storage/)</text>
+  <line x1="612" y1="876" x2="640" y2="876" class="healthline"/>
+  <text x="648" y="880" class="legendtext">heartbeat / health check</text>
+
+</svg>

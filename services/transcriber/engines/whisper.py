@@ -7,6 +7,9 @@ from services.transcriber.config import (
     WHISPER_MODEL,
     WHISPER_LANGUAGE,
 )
+from shared.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 """Whisper transcription engine wrapper.
 
@@ -16,6 +19,8 @@ pool so the surrounding async code can await it.
 """
 
 _model = None
+_device = WHISPER_DEVICE
+_compute_type = WHISPER_COMPUTE_TYPE
 
 
 def get_model() -> WhisperModel:
@@ -27,14 +32,32 @@ def get_model() -> WhisperModel:
     """
     global _model
     if _model is None:
-        print(f"[whisper] Loading model '{WHISPER_MODEL}' on {WHISPER_DEVICE}...")
+        logger.info(f"[whisper] Loading model '{WHISPER_MODEL}' on {_device}...")
         _model = WhisperModel(
             WHISPER_MODEL,
-            device=WHISPER_DEVICE,
-            compute_type=WHISPER_COMPUTE_TYPE,
+            device=_device,
+            compute_type=_compute_type,
         )
-        print(f"[whisper] Model ready.")
+        logger.info(f"[whisper] Model ready.")
     return _model
+
+
+def _fall_back_to_cpu():
+    """Drop to CPU for the rest of this process after a CUDA runtime failure.
+
+    torch.cuda.is_available() (used in config.py to pick WHISPER_DEVICE)
+    only confirms an NVIDIA driver/GPU is present — it doesn't guarantee
+    ctranslate2 (faster-whisper's backend) can find the separate CUDA
+    runtime libraries it needs (cuBLAS/cuDNN), which torch bundles
+    privately and doesn't share. When that's missing, every GPU attempt
+    fails identically, so retrying the same job burns its retry budget on
+    a guaranteed repeat failure — switch to CPU once and stay there.
+    """
+    global _model, _device, _compute_type
+    logger.error("[whisper] CUDA runtime libraries not usable on this machine — falling back to CPU for the rest of this run.")
+    _device = "cpu"
+    _compute_type = "int8"
+    _model = None
 
 
 class WhisperEngine(BaseTranscriptionEngine):
@@ -49,12 +72,22 @@ class WhisperEngine(BaseTranscriptionEngine):
         loop = asyncio.get_event_loop()
 
         # Run in thread pool — whisper is CPU/GPU bound, not async
-        result = await loop.run_in_executor(None, self._run, audio_path)
-        return result
+        try:
+            return await loop.run_in_executor(None, self._run, audio_path)
+        except Exception as e:
+            # A missing CUDA runtime library (cublas/cudnn DLLs) fails
+            # every attempt identically — catch that specific class of
+            # error and retry once on CPU instead of letting the job's
+            # normal retry loop hit the same wall three times.
+            message = str(e).lower()
+            if _device == "cuda" and any(s in message for s in ("cublas", "cudnn", "cuda")):
+                _fall_back_to_cpu()
+                return await loop.run_in_executor(None, self._run, audio_path)
+            raise
 
     def _run(self, audio_path: str) -> dict:
         model = get_model()
-        print(f"[whisper] Transcribing: {audio_path}")
+        logger.info(f"[whisper] Transcribing: {audio_path}")
 
         # Configure the model to apply a small VAD filter to skip long
         # stretches of silence; this tends to improve throughput and reduces

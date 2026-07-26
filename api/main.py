@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from api.routes import jobs, transcripts
+from api.routes import jobs, transcripts, tasks, health
 from shared.db.database import ping
 
 app = FastAPI(
@@ -10,6 +10,8 @@ app = FastAPI(
 
 app.include_router(jobs.router)
 app.include_router(transcripts.router)
+app.include_router(tasks.router)
+app.include_router(health.router)
 
 
 @app.on_event("startup")
@@ -20,8 +22,3 @@ async def startup():
 @app.get("/")
 async def root():
     return {"status": "ok", "service": "chamber-scribe"}
-
-
-@app.get("/health")
-async def health():
-    return {"status": "ok"}

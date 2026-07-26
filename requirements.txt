@@ -1,0 +1,12 @@
+fastapi==0.139.2
+uvicorn==0.51.0
+pymongo==4.17.0
+httpx==0.28.1
+beautifulsoup4==4.15.0
+python-dotenv==1.2.2
+apscheduler==3.11.3
+faster-whisper==1.2.1
+# torch is intentionally NOT pinned/listed here — it's installed separately
+# by install.ps1, which picks a CPU or CUDA build depending on the machine.
+# Keeping it out of this atomic `pip install -r requirements.txt` means a
+# stale/unavailable torch pin can't take the other 8 packages down with it.

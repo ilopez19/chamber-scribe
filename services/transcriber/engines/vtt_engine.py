@@ -125,21 +125,17 @@ class VTTEngine(BaseTranscriptionEngine):
     downloaded by the downloader as part of the DownloadPlan.
     """
 
-    async def transcribe(self, audio_path: str) -> dict:
+    async def transcribe(self, vtt_path: str) -> dict:
         """
-        audio_path is the .mp3 path — we derive the .vtt path from it.
-
-        Convention:
-            audio:   storage/audio/michigan_senate/{portal_id}.mp3
-            caption: storage/captions/michigan_senate/{portal_id}.vtt
+        vtt_path is the actual path to the .vtt caption file, as recorded
+        in the job's file_paths — captioned Senate jobs only ever download
+        a .vtt (no .mp3), so this is never derived/guessed from a naming
+        convention, just used directly.
         """
-        vtt_path = self._find_vtt(audio_path)
+        import os
 
-        if not vtt_path:
-            raise FileNotFoundError(
-                f"No VTT caption file found for audio: {audio_path}. "
-                f"Expected at: {self._expected_vtt_path(audio_path)}"
-            )
+        if not vtt_path or not os.path.exists(vtt_path):
+            raise FileNotFoundError(f"No VTT caption file found at: {vtt_path}")
 
         segments = parse_vtt(vtt_path)
 
@@ -154,17 +150,3 @@ class VTTEngine(BaseTranscriptionEngine):
             "language": "en",
             "engine":   "vtt-caption",
         }
-
-    def _expected_vtt_path(self, audio_path: str) -> str:
-        """Derive the expected VTT path from an audio path."""
-        import os
-        filename = os.path.basename(audio_path)
-        portal_id = filename.replace(".mp3", "")
-        source = audio_path.split(os.sep)[-2] if os.sep in audio_path else "unknown"
-        return os.path.join("storage", "captions", source, f"{portal_id}.vtt")
-
-    def _find_vtt(self, audio_path: str) -> str | None:
-        """Return VTT path if it exists, else None."""
-        import os
-        vtt_path = self._expected_vtt_path(audio_path)
-        return vtt_path if os.path.exists(vtt_path) else None

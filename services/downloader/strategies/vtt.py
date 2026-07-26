@@ -2,6 +2,9 @@ import os
 import httpx
 from services.downloader.strategies.base import BaseDownloadStrategy
 from services.downloader.config import DOWNLOAD_TIMEOUT
+from shared.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class VTTDownloadStrategy(BaseDownloadStrategy):
@@ -22,9 +25,9 @@ class VTTDownloadStrategy(BaseDownloadStrategy):
                     f.write(response.text)
 
                 size_kb = round(os.path.getsize(destination) / 1_000, 1)
-                print(f"[vtt] ✅ Downloaded: {destination} ({size_kb}KB)")
+                logger.info(f"[vtt] ✅ Downloaded: {destination} ({size_kb}KB)")
                 return True
 
         except Exception as e:
-            print(f"[vtt] ❌ Failed: {url} — {e}")
+            logger.error(f"[vtt] ❌ Failed: {url} — {e}")
             return False

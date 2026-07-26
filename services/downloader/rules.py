@@ -9,6 +9,9 @@ from services.downloader.config import (
     CAPTION_URL_TEMPLATE,
     AUDIO_URL_TEMPLATE,
 )
+from shared.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class DownloadPlan:
@@ -51,7 +54,8 @@ class DownloadRules:
     2. If captioned=False → download audio only (transcriber uses Whisper)
 
     House rules:
-    1. Download audio via HTTP
+    1. Extract audio directly from the HTTP video URL via FFmpeg — the raw
+       video is never written to disk, only the extracted audio track.
 
     Adding a new portal: add an elif block here and in portal_registry.py.
     """
@@ -71,6 +75,26 @@ class DownloadRules:
 
         # ── Rule: Michigan Senate ─────────────────────────────────────────────
         if source == "michigan_senate" and portal_id:
+            title = metadata.get("title", "")
+
+            # "Live Stream N" entries (and, it turns out, entries with no
+            # title at all — metadata_utils defaults a missing filename to
+            # "untitled") are per-channel slots (e.g. "ch1", "ch2"), not
+            # one-time recordings — confirmed via the portal's own
+            # getLive/infoLive API and by requesting the channel manifest
+            # directly (vod_clients/misenate/live/ch1/video.m3u8 returns a
+            # live, continuously-updating stream with no video ID in the
+            # URL at all). Our normal on-demand URL template below doesn't
+            # apply to them — every properly-titled job has downloaded
+            # successfully from it, and every untitled one has failed
+            # against it, which is why missing title is being used as the
+            # signal here. Treating one as a normal video would risk
+            # silently never re-checking a channel that gets reused later
+            # with different content, so these are skipped rather than
+            # guessed at.
+            if title.lower().startswith("live stream") or title.strip().lower() in ("", "untitled"):
+                logger.info(f"[rules] Senate — skipping live-channel entry (no stable recording): {title or 'untitled'}")
+                return plan
 
             if captioned:
                 # Fast path — if captions exist we prefer the VTT route.
@@ -80,7 +104,7 @@ class DownloadRules:
                 vtt_url = CAPTION_URL_TEMPLATE.format(portal_id=portal_id)
                 plan.add(vtt_url, vtt_dest, "vtt")
 
-                print(f"[rules] Senate captioned — VTT only: {portal_id}")
+                logger.info(f"[rules] Senate captioned — VTT only: {portal_id}")
 
             else:
                 # No captions — fall back to audio download so Whisper can
@@ -90,21 +114,23 @@ class DownloadRules:
                 audio_url = AUDIO_URL_TEMPLATE.format(portal_id=portal_id)
                 plan.add(audio_url, audio_dest, "hls")
 
-                print(f"[rules] Senate uncaptioned — audio only: {portal_id}")
+                logger.info(f"[rules] Senate uncaptioned — audio only: {portal_id}")
 
         # ── Rule: Michigan House ──────────────────────────────────────────────
         elif source == "michigan_house":
-            # House serves static MP4 files — download over HTTP and extract
-            # audio. Note: some House URLs require skipping SSL verification,
-            # handled in the HTTPDownloadStrategy initialization elsewhere.
+            # House serves static MP4 files. FFmpeg extracts the audio
+            # directly from the source URL — the full video is never
+            # downloaded to disk. Note: House URLs require skipping SSL
+            # verification, handled in HTTPAudioExtractStrategy elsewhere.
             filename = metadata.get("filename", f"{portal_id}.mp4")
-            audio_dest = f"{DownloadRules.AUDIO_DIR}/{source}/{filename}.mp3"
-            plan.add(video_url, audio_dest, "http_audio")
+            stem = filename[:-4] if filename.endswith(".mp4") else filename
+            audio_dest = f"{DownloadRules.AUDIO_DIR}/{source}/{stem}.mp3"
+            plan.add(video_url, audio_dest, "http_audio_extract")
 
-            print(f"[rules] House — HTTP audio: {filename}")
+            logger.info(f"[rules] House — extracting audio: {filename}")
 
         # ── Fallback: unknown source ──────────────────────────────────────────
         else:
-            print(f"[rules] No rule defined for source: {source} — skipping")
+            logger.info(f"[rules] No rule defined for source: {source} — skipping")
 
         return plan

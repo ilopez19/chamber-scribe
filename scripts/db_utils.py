@@ -16,7 +16,10 @@ Important notes:
 
 import asyncio
 import os
-from shared.db.database import jobs_collection, transcripts_collection
+import shutil
+from shared.db.database import jobs_collection, transcripts_collection, tasks_collection
+
+STORAGE_DIRS = ["storage/audio", "storage/captions"]
 
 
 async def add_indexes():
@@ -47,19 +50,52 @@ async def add_indexes():
     print("✅ Text search index created on transcripts.text")
 
 async def clear_all():
-    """Delete all jobs and transcripts from the database.
+    """Delete all jobs, transcripts, and transcription task records.
 
     This is a destructive cleanup intended for development or emergency use.
     Side effects:
-    - Permanently deletes all documents in the jobs and transcripts
+    - Permanently deletes all documents in the jobs, transcripts, and tasks
       collections.
     WARNING: Do not run against production unless you intend to remove all
     data.
     """
     jobs = await jobs_collection().delete_many({})
     transcripts = await transcripts_collection().delete_many({})
+    tasks = await tasks_collection().delete_many({})
     print(f"🗑️  Deleted {jobs.deleted_count} jobs")
     print(f"🗑️  Deleted {transcripts.deleted_count} transcripts")
+    print(f"🗑️  Deleted {tasks.deleted_count} tasks")
+
+
+async def clear_storage():
+    """Delete all downloaded audio and caption files from local storage.
+
+    This is a destructive cleanup intended for development or emergency use
+    — it only touches files on disk under storage/, not the database. Pair
+    with `clear` to fully reset both the database and local files for a
+    true clean slate.
+
+    Side effects:
+    - Permanently deletes every file under storage/audio/ and
+      storage/captions/. The top-level directories are recreated empty
+      afterward so the app doesn't need to create them on next run.
+    """
+    total_files = 0
+    total_bytes = 0
+
+    for base in STORAGE_DIRS:
+        if not os.path.isdir(base):
+            continue
+        for root, _dirs, files in os.walk(base):
+            for f in files:
+                path = os.path.join(root, f)
+                total_bytes += os.path.getsize(path)
+                total_files += 1
+        shutil.rmtree(base)
+        os.makedirs(base, exist_ok=True)
+
+    size_gb = round(total_bytes / 1_000_000_000, 2)
+    print(f"🗑️  Deleted {total_files} file(s) ({size_gb}GB) from local storage")
 
 
 async def reset_failed():
@@ -142,19 +178,22 @@ async def summary():
     col = jobs_collection()
     print("\n📊 Job status summary:")
     # Order statuses to present a logical processing flow to operators.
-    for status in ["pending", "downloading", "downloaded", "processing", "transcribed", "failed", "skipped"]:
+    for status in ["pending", "downloading", "downloaded", "processing", "transcribed", "failed", "excluded"]:
         count = await col.count_documents({"status": status})
         if count > 0:
             print(f"   {status:<15} {count}")
     total = await col.count_documents({})
     transcript_count = await transcripts_collection().count_documents({})
+    task_count = await tasks_collection().count_documents({})
     print(f"   {'total jobs':<15} {total}")
-    print(f"   {'transcripts':<15} {transcript_count}\n")
+    print(f"   {'transcripts':<15} {transcript_count}")
+    print(f"   {'tasks':<15} {task_count}\n")
 
 
 COMMANDS = {
     "indexes":       (add_indexes,    "Add unique indexes to MongoDB"),
-    "clear":         (clear_all,      "Delete all jobs and transcripts"),
+    "clear":         (clear_all,      "Delete all jobs, transcripts, and tasks"),
+    "clear-files":   (clear_storage,  "Delete all downloaded audio/caption files from local storage"),
     "reset-failed":  (reset_failed,   "Reset failed jobs to pending"),
     "fix-audio":     (fix_missing_audio, "Reset downloaded jobs with missing audio"),
     "summary":       (summary,        "Show job status counts"),

@@ -11,6 +11,9 @@ import asyncio
 import httpx
 from typing import Optional
 from services.scraper.config import HTTP_TIMEOUT, HTTP_VERIFY, MAX_RETRIES, RETRY_DELAY
+from shared.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class HTTPClient:
@@ -68,7 +71,7 @@ async def fetch_with_retry(
         except (httpx.RequestError, httpx.HTTPStatusError) as e:
             if attempt >= max_retries:
                 raise  # Re-raise on final attempt
-            print(f"[http_utils] Retry {attempt + 1}/{max_retries} after {delay}s: {url} — {e}")
+            logger.warning(f"[http_utils] Retry {attempt + 1}/{max_retries} after {delay}s: {url} — {e}")
             await asyncio.sleep(delay)
             delay *= 2  # Exponential backoff
 
