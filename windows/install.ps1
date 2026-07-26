@@ -5,11 +5,16 @@
     aren't already on this machine.
 
 .NOTES
-    Run from the repo root:  .\install.ps1
+    Run from the repo root:  .\windows\install.ps1
     Safe to re-run - every step checks whether it's already done first.
 #>
 
 $ErrorActionPreference = "Stop"
+
+# This script lives in windows\ but operates on the repo root - works
+# whether it's invoked as .\windows\install.ps1 from the root, or run
+# directly from inside windows\.
+Set-Location (Split-Path -Parent $PSScriptRoot)
 
 function Test-CommandExists($name) {
     return [bool](Get-Command $name -ErrorAction SilentlyContinue)
@@ -23,14 +28,34 @@ function Write-Step($msg) {
 # -- 0. Sanity checks ---------------------------------------------------------
 Write-Step "Checking prerequisites"
 
-if (-not (Test-CommandExists "python")) {
-    Write-Host "Python not found on PATH. Install Python 3.12+ from https://www.python.org/downloads/ (check 'Add python.exe to PATH' during install), then re-run this script." -ForegroundColor Red
-    exit 1
-}
-
 $hasWinget = Test-CommandExists "winget"
 if (-not $hasWinget) {
-    Write-Host "winget not found - FFmpeg/MongoDB auto-install will be skipped. Install App Installer from the Microsoft Store to get winget, or install them manually (links below if needed)." -ForegroundColor Yellow
+    Write-Host "winget not found - FFmpeg/MongoDB/Python auto-install will be skipped. Install App Installer from the Microsoft Store to get winget, or install them manually (links below if needed)." -ForegroundColor Yellow
+}
+
+if (-not (Test-CommandExists "python")) {
+    Write-Host "Python not found on PATH." -ForegroundColor Yellow
+
+    if ($hasWinget) {
+        $installPython = Read-Host "Install Python 3.12 now via winget? (y/N)"
+        if ($installPython -eq "y" -or $installPython -eq "Y") {
+            winget install -e --id Python.Python.3.12 --accept-source-agreements --accept-package-agreements
+
+            # winget registers the new PATH entry in the registry, but this
+            # terminal's own $env:Path was loaded at session start and won't
+            # see it - reload from the registry so 'python' works without
+            # having to close and reopen the terminal.
+            $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
+        } else {
+            Write-Host "Skipping Python install." -ForegroundColor Yellow
+        }
+    }
+
+    if (-not (Test-CommandExists "python")) {
+        Write-Host "Python still not found on PATH. Install Python 3.12+ from https://www.python.org/downloads/ (check 'Add python.exe to PATH' during install), close and reopen your terminal, then re-run this script." -ForegroundColor Red
+        exit 1
+    }
+    Write-Host "Python is now available." -ForegroundColor Green
 }
 
 # -- 1. Python virtual environment + dependencies -----------------------------
@@ -147,7 +172,15 @@ if (-not (Test-Path ".\.env")) {
 
 # -- Done -----------------------------------------------------------------------------
 Write-Step "Setup complete"
-Write-Host "Run the pipeline (scraper + downloader + transcriber):  .\run.bat"
-Write-Host "Run the API:                                            .\venv\Scripts\uvicorn.exe api.main:app --reload"
-Write-Host ""
 Write-Host "Sanity check the database connection:  .\venv\Scripts\python.exe -m scripts.db_utils summary"
+Write-Host ""
+
+$startNow = Read-Host "Start Chamber Scribe now (pipeline + API in the background)? (y/N)"
+if ($startNow -eq "y" -or $startNow -eq "Y") {
+    & "$PSScriptRoot\start.ps1"
+} else {
+    Write-Host "Start it later with:  .\windows\start.ps1"
+    Write-Host "Or run it in the foreground instead:"
+    Write-Host "  Pipeline:  .\windows\run.bat"
+    Write-Host "  API:       .\venv\Scripts\uvicorn.exe api.main:app --reload"
+}

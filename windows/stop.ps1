@@ -3,7 +3,7 @@
     Stops whatever start.ps1 started, using the PIDs it saved to .run\.
 
 .NOTES
-    Run from the repo root:  .\stop.ps1
+    Run from the repo root:  .\windows\stop.ps1
     Safe to run even if nothing is running - just says so and exits cleanly.
     This is a hard stop (Stop-Process), not a graceful shutdown request: a
     download or transcription in progress gets killed mid-work rather than
@@ -11,6 +11,8 @@
     downloader.py/transcriber.py picks up anything left stuck on the next
     start, instead of it staying stuck forever.
 #>
+
+Set-Location (Split-Path -Parent $PSScriptRoot)
 
 function Stop-Tracked($name, $pidFile) {
     if (-not (Test-Path $pidFile)) {

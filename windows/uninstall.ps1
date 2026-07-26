@@ -5,12 +5,14 @@
     clean machine.
 
 .NOTES
-    Run from the repo root:  .\uninstall.ps1
+    Run from the repo root:  .\windows\uninstall.ps1
     Does NOT touch .env, storage/, or MongoDB's data directory - only the
     venv folder and the FFmpeg/MongoDB applications themselves.
 #>
 
 $ErrorActionPreference = "Continue"
+
+Set-Location (Split-Path -Parent $PSScriptRoot)
 
 function Write-Step($msg) {
     Write-Host ""
@@ -67,4 +69,4 @@ if (Test-CommandExists "winget") {
 
 # -- Done ---------------------------------------------------------------------
 Write-Step "Uninstall complete"
-Write-Host "Close and reopen your terminal so PATH changes clear, then run:  .\install.ps1"
+Write-Host "Close and reopen your terminal so PATH changes clear, then run:  .\windows\install.ps1"

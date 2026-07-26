@@ -1,4 +1,4 @@
-# Interview prep — code walkthrough plan
+# Chamber Scribe — code study plan
 
 Not part of the app. This is your personal checklist for going through the codebase before the onsite, in the order things actually run (scraper → downloader → transcriber → api), so each stage makes sense before the next depends on it. Delete this file (or leave it — it's harmless) once you're done with it.
 
@@ -24,13 +24,13 @@ For each file: read it, then check you can answer the "be ready for" line withou
 - [ ] `services/scraper/detectors/base.py` — `BaseDetector` / `HTTPDetector`. This is the abstraction question — know what it does and does NOT share between portals.
 - [ ] `services/scraper/detectors/senate_portal.py` — the JSON API detector. Look at `SENATE_CATALOG_API_BASE_URL`/`CLOUDFRONT_BASE` comments, the tab loop, and the dedup reset at the top of `get_new_videos()`.
   - **Be ready for:** what `SENATE_CATALOG_API_BASE_URL` actually is (AWS API Gateway, catalog ID in the path, not per-video). Why the dedup tracker resets every call.
-- [ ] `services/scraper/detectors/house_portal.py` — the HTML-scraping detector. Look at the `item={}` comment.
-  - **Be ready for:** why House vs Senate are separate classes, not one. Why House jobs never get `duration_secs`.
+- [ ] `services/scraper/detectors/house_portal.py` — the HTML-scraping detector. Look at the `item={}` comment explaining why House jobs never get duration.
+  - **Be ready for:** why House vs Senate are separate classes, not one. Why House jobs never get `duration_secs` — genuine HTML limitation, not a bug you missed.
 - [ ] `services/scraper/filter_utils.py` — `DeduplicationTracker` (used) vs `VideoFilter` (dead code, zero call sites).
   - **Be ready for:** "what keys are in the video dict passed to `filter_by_transcoded`" — and the honest answer that it's unused.
 - [ ] `services/scraper/metadata_utils.py` — `normalize_portal_metadata`, `extract_duration`, `extract_size`.
 - [ ] `services/scraper/portal_registry.py` — per-portal validation config (expected count, required fields).
-- [ ] `services/scraper/scraper.py` — the orchestrator. Read `run_scrape()` and `_scrape_with_retry()` fully.
+- [ ] `services/scraper/scraper.py` — the orchestrator. Read `run_scrape()` and `_scrape_with_retry()` fully. Note the "PIPELINE STAGE 1 of 3" banner at the top of the file — it states reads/writes/trigger in one place.
   - **Be ready for:** why a validation failure alerts but doesn't discard the batch. The re-queue condition (`status == FAILED and retries >= EXHAUSTED_RETRIES`).
 
 ## 3. Stage 2 — Downloader (`services/downloader/`)
@@ -39,7 +39,7 @@ For each file: read it, then check you can answer the "be ready for" line withou
   - **Be ready for:** the "Live Stream N" discovery story — what it looked like, how you found the real cause, what changed.
 - [ ] `services/downloader/strategies/` — skim all four (`hls.py`, `http.py`, `http_audio.py`, `vtt.py`). Know which portal/format uses which.
 - [ ] `services/downloader/downloader.py` — `_download_job()` and `run_downloads()`.
-  - **Be ready for:** what happens on an empty plan (excluded, not failed). How `claim_jobs()` is used here specifically.
+  - **Be ready for:** what happens on an empty plan (excluded, not failed). How `claim_jobs()` is used here specifically — including that it re-claims jobs stuck in `DOWNLOADING` from a process that got killed mid-download, not just fresh `PENDING` ones.
 
 ## 4. Stage 3 — Transcriber (`services/transcriber/`)
 
@@ -53,7 +53,7 @@ For each file: read it, then check you can answer the "be ready for" line withou
 
 - [ ] `api/main.py`, `api/routes/jobs.py`, `transcripts.py`, `tasks.py` — quick skim, these are mostly straightforward CRUD-style reads.
 - [ ] `api/routes/health.py` — read closely.
-  - **Be ready for:** why the API and pipeline never call each other directly, only through Mongo. Why `/health` returns 503 (not just a 200 with `"status": "degraded"` in the body) when a loop's heartbeat is stale.
+  - **Be ready for:** why the API and pipeline never call each other directly, only through Mongo. Why `/health` returns HTTP 503 (not just a 200 with `"status": "degraded"` in the body) when a loop's heartbeat is stale — and why that distinction matters for container/orchestrator healthchecks specifically.
 
 ## 6. Process supervision and concurrency (the "survive" requirement)
 
@@ -61,11 +61,13 @@ For each file: read it, then check you can answer the "be ready for" line withou
   - **Be ready for:** what happens if the whole process crashes (not just one loop). What resets the backoff timer.
 - [ ] Re-read `claim_jobs()` in `shared/db/database.py` one more time here, now that you've seen all three places it's called — this is your answer to "how do you guarantee idempotency" and "how do your services talk to each other."
 
-## 7. Deployment
+## 7. Deployment and process control
 
 - [ ] `Dockerfile` — know why torch is installed as a separate `RUN` step, not in `requirements.txt`.
 - [ ] `docker-compose.yml` — three services (`mongo`, `pipeline`, `api`), why `MONGO_URI` is overridden per-container instead of read straight from `.env`.
   - **Be ready for:** what you'd change for GPU support in Docker (different base image, NVIDIA Container Toolkit on the host).
+- [ ] `windows/` and `macos-linux/` — same six scripts (`install`, `uninstall`, `run`, `start`, `stop`, `restart`) implemented per-OS. Skim `start.ps1`/`start.sh` and `stop.ps1`/`stop.sh`.
+  - **Be ready for:** why `stop` is a hard kill, not a graceful shutdown — and why that's safe here specifically (ties back to `claim_jobs()` re-claiming anything left mid-work).
 
 ## 8. Tests
 

@@ -4,7 +4,7 @@
     followed by .\start.ps1.
 
 .NOTES
-    Run from the repo root:  .\restart.ps1
+    Run from the repo root:  .\windows\restart.ps1
 #>
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path

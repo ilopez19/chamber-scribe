@@ -3,10 +3,12 @@
 # MongoDB (via Homebrew). Use this to test install.sh against a clean
 # machine.
 #
-# Run from the repo root:  ./uninstall.sh   (or: bash uninstall.sh)
+# Run from the repo root:  ./macos-linux/uninstall.sh   (or: bash macos-linux/uninstall.sh)
 # Does NOT touch .env, storage/, or MongoDB's data directory - only the
 # venv folder and the FFmpeg/MongoDB applications themselves.
-# Windows: use uninstall.ps1 instead.
+# Windows: use windows\uninstall.ps1 instead.
+
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 step() { echo ""; echo "== $1 =="; }
 has() { command -v "$1" >/dev/null 2>&1; }
@@ -52,4 +54,4 @@ fi
 
 # -- Done ---------------------------------------------------------------------
 step "Uninstall complete"
-echo "Run:  ./install.sh"
+echo "Run:  ./macos-linux/install.sh"

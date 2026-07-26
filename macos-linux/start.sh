@@ -3,27 +3,29 @@
 # processes, so this terminal is free again immediately. PIDs are saved
 # to .run/ so stop.sh and restart.sh know what to stop later.
 #
-# Run from the repo root:  ./start.sh
+# Run from the repo root:  ./macos-linux/start.sh
 # Logs go to logs/pipeline.out.log / logs/api.out.log.
 # Refuses to start a second copy if one's already running - use
-# ./restart.sh instead.
-# Windows: use start.ps1 instead.
+# ./macos-linux/restart.sh instead.
+# Windows: use windows\start.ps1 instead.
 
 set -uo pipefail
+
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 is_running() {
     [ -f "$1" ] && kill -0 "$(cat "$1")" 2>/dev/null
 }
 
 if [ ! -f "venv/bin/python3" ]; then
-    echo "No venv found - run ./install.sh first."
+    echo "No venv found - run ./macos-linux/install.sh first."
     exit 1
 fi
 
 mkdir -p .run logs
 
 if is_running ".run/pipeline.pid" || is_running ".run/api.pid"; then
-    echo "Already running. Use ./restart.sh to restart, or ./stop.sh first."
+    echo "Already running. Use ./macos-linux/restart.sh to restart, or ./macos-linux/stop.sh first."
     exit 1
 fi
 
@@ -38,5 +40,5 @@ echo "API started (PID $(cat .run/api.pid)) - http://localhost:8000"
 echo ""
 echo "Both running in the background."
 echo "  Check health:  curl http://localhost:8000/health"
-echo "  Stop:          ./stop.sh"
-echo "  Restart:       ./restart.sh"
+echo "  Stop:          ./macos-linux/stop.sh"
+echo "  Restart:       ./macos-linux/restart.sh"

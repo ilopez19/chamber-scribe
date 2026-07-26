@@ -29,6 +29,6 @@ Thumbs.db
 storage/audio/
 storage/captions/
 
-# start.ps1's PID tracking for stop.ps1/restart.ps1
+# windows/start.ps1 and macos-linux/start.sh's PID tracking for stop/restart
 .run/
 logs/

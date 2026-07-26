@@ -172,7 +172,8 @@ async def run_downloads() -> None:
     # the log line below, since both now share the same DOWNLOADING status.
     #
     # Also re-claims jobs already sitting in DOWNLOADING: if this process
-    # was killed (crash, container restart, `.\stop.ps1`) mid-download,
+    # was killed (crash, container restart, `windows\stop.ps1` /
+    # `macos-linux/stop.sh`) mid-download,
     # nothing else ever moves that job out of DOWNLOADING, so without this
     # it would stay stuck forever instead of being picked back up under a
     # fresh claim_id next cycle. Mirrors how run_transcriptions() re-claims

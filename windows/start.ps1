@@ -5,13 +5,15 @@
     to .run\ so stop.ps1 and restart.ps1 know what to stop later.
 
 .NOTES
-    Run from the repo root:  .\start.ps1
+    Run from the repo root:  .\windows\start.ps1
     Logs go to logs\pipeline.out.log / logs\api.out.log (and .err.log).
     Refuses to start a second copy if one's already running - use
-    .\restart.ps1 instead.
+    .\windows\restart.ps1 instead.
 #>
 
 $ErrorActionPreference = "Stop"
+
+Set-Location (Split-Path -Parent $PSScriptRoot)
 
 function Test-Running($pidFile) {
     if (-not (Test-Path $pidFile)) { return $false }
@@ -21,7 +23,7 @@ function Test-Running($pidFile) {
 }
 
 if (-not (Test-Path ".\venv\Scripts\python.exe")) {
-    Write-Host "No venv found - run .\install.ps1 first." -ForegroundColor Red
+    Write-Host "No venv found - run .\windows\install.ps1 first." -ForegroundColor Red
     exit 1
 }
 
@@ -29,7 +31,7 @@ New-Item -ItemType Directory -Force -Path ".run" | Out-Null
 New-Item -ItemType Directory -Force -Path "logs" | Out-Null
 
 if ((Test-Running ".run\pipeline.pid") -or (Test-Running ".run\api.pid")) {
-    Write-Host "Already running. Use .\restart.ps1 to restart, or .\stop.ps1 first." -ForegroundColor Yellow
+    Write-Host "Already running. Use .\windows\restart.ps1 to restart, or .\windows\stop.ps1 first." -ForegroundColor Yellow
     exit 1
 }
 
@@ -48,5 +50,5 @@ Write-Host "API started (PID $($api.Id)) - http://localhost:8000" -ForegroundCol
 Write-Host ""
 Write-Host "Both running in the background."
 Write-Host "  Check health:  curl http://localhost:8000/health"
-Write-Host "  Stop:          .\stop.ps1"
-Write-Host "  Restart:       .\restart.ps1"
+Write-Host "  Stop:          .\windows\stop.ps1"
+Write-Host "  Restart:       .\windows\restart.ps1"

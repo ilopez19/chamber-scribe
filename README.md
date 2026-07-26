@@ -28,51 +28,44 @@ Please don't hesitate to ask any question, excited to chat!
 
 **Windows:**
 
-```powershell
-.\install.ps1
+```
+.\windows\install.ps1
 ```
 
-This installs Python dependencies into a venv, and FFmpeg + MongoDB via `winget` if you don't already have them. Safe to re-run. To do it by hand instead:
+This installs Python dependencies into a venv, and FFmpeg + MongoDB via `winget` if you don't already have them; if Python itself isn't found, it asks before installing it too (never installs anything without asking first). At the end it offers to start the pipeline + API for you right there. Safe to re-run. To do it by hand instead:
 
-```powershell
+```
 python -m venv venv
 venv\Scripts\activate
 pip install -r requirements.txt
-
-# torch from plain pip is CPU-only. If you have an NVIDIA GPU, get a
-# CUDA build instead so Whisper actually uses it (check pytorch.org for
-# the current CUDA tag - it changes over time, cu130/cu128/cu126 as of 2026):
 pip install torch --index-url https://download.pytorch.org/whl/cu130
-
 winget install -e --id Gyan.FFmpeg
 winget install -e --id MongoDB.Server
 copy .env.example .env
 ```
 
+torch from plain pip is CPU-only. If you have an NVIDIA GPU, get a CUDA build instead so Whisper actually uses it — check pytorch.org for the current CUDA tag, it changes over time (cu130/cu128/cu126 as of 2026); that's the URL used above.
+
 **macOS/Linux:**
 
-```bash
-./install.sh
+```
+./macos-linux/install.sh
 ```
 
-Same thing, using Homebrew instead of `winget` for FFmpeg/MongoDB. If it's not executable yet (`Permission denied`), run `chmod +x *.sh` once, or just `bash install.sh`.
+Same thing, using Homebrew instead of `winget` for FFmpeg/MongoDB, and the same ask-before-installing-Python and offer-to-start-at-the-end behavior. If it's not executable yet (`Permission denied`), run `chmod +x macos-linux/*.sh` once, or just `bash macos-linux/install.sh`. Note: `windows\install.ps1` will NOT run in a Mac/Linux shell — it's PowerShell, not bash, and needs `macos-linux/install.sh` instead. By hand instead of the script:
 
-
-Note: `install.ps1` (the Windows script) will NOT run in a Mac/Linux shell — it's PowerShell, not bash, and needs `install.sh` instead. By hand instead of the script:
-
-```bash
-python3  -m venv venv
-source  venv/bin/activate
-pip  install -r requirements.txt
-
-pip  install torch      # CPU on Intel Macs/Linux; includes Apple Silicon (MPS) support automatically on M-series Macs
-
-
-brew  install ffmpeg
-brew tap mongodb/brew && brew  install mongodb-community
+```
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+pip install torch
+brew install ffmpeg
+brew tap mongodb/brew && brew install mongodb-community
 brew services start mongodb-community
 cp .env.example .env
 ```
+
+Plain `pip install torch` is CPU-only on Intel Macs/Linux, but already includes Apple Silicon (MPS) support automatically on M-series Macs — no separate index URL needed like on Windows.
 
 | Variable | Description |
 |---|---|
@@ -84,25 +77,31 @@ cp .env.example .env
 
 Check everything's connected: `venv\Scripts\python.exe -m scripts.db_utils summary` (Windows) or `venv/bin/python3 -m scripts.db_utils summary` (macOS/Linux)
 
-To test setup from scratch, `.\uninstall.ps1` (Windows) or `./uninstall.sh` (macOS/Linux) removes the venv and uninstalls FFmpeg/MongoDB (asks for confirmation first).
+To test setup from scratch, `.\windows\uninstall.ps1` (Windows) or `./macos-linux/uninstall.sh` (macOS/Linux) removes the venv and uninstalls FFmpeg/MongoDB (asks for confirmation first).
 
 ## Running
 
 Two separate processes — start both:
 
-```bash
-# Windows
-run.bat                            # scraper + downloader + transcriber loops
-venv\Scripts\uvicorn api.main:app --reload      # REST API
+**Windows:**
 
-# macOS/Linux
-./run.sh                           # scraper + downloader + transcriber loops
-venv/bin/uvicorn api.main:app --reload          # REST API
 ```
+.\windows\run.bat
+venv\Scripts\uvicorn api.main:app --reload
+```
+
+**macOS/Linux:**
+
+```
+./macos-linux/run.sh
+venv/bin/uvicorn api.main:app --reload
+```
+
+Each pair is the pipeline (scraper + downloader + transcriber loops) and the REST API.
 
 ### Running with Docker
 
-```bash
+```
 cp .env.example .env
 docker compose up --build
 ```
@@ -117,32 +116,45 @@ The image installs the CPU build of torch, so Whisper runs on CPU in a container
 
 **Local (no Docker):** `run.bat`/`run.sh` and `uvicorn` (from "Running" above) run in the foreground of whatever terminal started them — closing that terminal or hitting Ctrl+C stops them. For running both in the background instead, with a way to stop/restart them from elsewhere:
 
-```powershell
-# Windows
-.\start.ps1     # starts pipeline + API in the background, logs to logs\
-.\stop.ps1      # stops whatever start.ps1 started
-.\restart.ps1   # stop.ps1 then start.ps1
+**Windows:**
+
+```
+.\windows\start.ps1
+.\windows\stop.ps1
+.\windows\restart.ps1
 ```
 
-```bash
-# macOS/Linux
-./start.sh      # starts pipeline + API in the background, logs to logs/
-./stop.sh       # stops whatever start.sh started
-./restart.sh    # stop.sh then start.sh
+**macOS/Linux:**
+
+```
+./macos-linux/start.sh
+./macos-linux/stop.sh
+./macos-linux/restart.sh
 ```
 
-Both write PIDs to `.run/` so `stop`/`restart` know what to stop later. Either is a hard stop (not a graceful shutdown signal), so anything mid-download or mid-transcription gets killed rather than finishing first. That's expected — `claim_jobs()`'s re-claim logic picks those jobs back up automatically next time the pipeline starts, instead of leaving them stuck.
+`start` runs the pipeline + API in the background and logs to `logs/`; `stop` stops whatever `start` started; `restart` is `stop` then `start`. Both write PIDs to `.run/` so `stop`/`restart` know what to stop later. Either is a hard stop (not a graceful shutdown signal), so anything mid-download or mid-transcription gets killed rather than finishing first. That's expected — `claim_jobs()`'s re-claim logic picks those jobs back up automatically next time the pipeline starts, instead of leaving them stuck.
 
 ## Where things live
 
 ```
 main.py                    Entry point — starts the scraper/downloader/transcriber loops under a restart-with-backoff wrapper
-run.bat / run.sh           Activates the venv and runs main.py (foreground) — Windows / macOS-Linux
-start.ps1 / start.sh       Starts pipeline + API in the background, PIDs tracked in .run/
-stop.ps1 / stop.sh         Stops whatever start.* started
-restart.ps1 / restart.sh   stop then start
-install.ps1 / install.sh   One-time setup: Python deps, FFmpeg, MongoDB
-uninstall.ps1 / uninstall.sh   Reverses install.* — removes venv, uninstalls FFmpeg/MongoDB
+
+windows/                   Windows setup/lifecycle scripts (PowerShell + .bat)
+  install.ps1                One-time setup: Python deps, FFmpeg, MongoDB
+  uninstall.ps1               Reverses install.ps1 — removes venv, uninstalls FFmpeg/MongoDB
+  run.bat                     Activates the venv and runs main.py (foreground)
+  start.ps1                   Starts pipeline + API in the background, PIDs tracked in .run/
+  stop.ps1                    Stops whatever start.ps1 started
+  restart.ps1                 stop.ps1 then start.ps1
+
+macos-linux/               macOS/Linux setup/lifecycle scripts (bash) — same jobs as windows/, one per file
+  install.sh
+  uninstall.sh
+  run.sh
+  start.sh
+  stop.sh
+  restart.sh
+
 pytest.ini                 Test config
 requirements-dev.txt       Adds pytest on top of requirements.txt
 Dockerfile                 One image, shared by the pipeline and api containers (command decides which runs)

@@ -3,11 +3,16 @@
 # environment + deps, FFmpeg, and MongoDB - installing FFmpeg/MongoDB via
 # Homebrew if they aren't already on this machine.
 #
-# Run from the repo root:  ./install.sh   (or: bash install.sh)
+# Run from the repo root:  ./macos-linux/install.sh   (or: bash macos-linux/install.sh)
 # Safe to re-run - every step checks whether it's already done first.
-# Windows: use install.ps1 instead.
+# Windows: use windows\install.ps1 instead.
 
 set -uo pipefail
+
+# Lives in macos-linux/ but operates on the repo root - works whether it's
+# invoked as ./macos-linux/install.sh from the root, or run directly from
+# inside macos-linux/.
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 step() { echo ""; echo "== $1 =="; }
 has() { command -v "$1" >/dev/null 2>&1; }
@@ -15,16 +20,30 @@ has() { command -v "$1" >/dev/null 2>&1; }
 # -- 0. Sanity checks ---------------------------------------------------------
 step "Checking prerequisites"
 
-if ! has python3; then
-    echo "python3 not found. Install Python 3.12+ (https://www.python.org/downloads/, or 'brew install python@3.12'), then re-run this script."
-    exit 1
-fi
-
 HAS_BREW=0
 if has brew; then
     HAS_BREW=1
 else
-    echo "Homebrew not found - FFmpeg/MongoDB auto-install will be skipped. Install it from https://brew.sh, or install FFmpeg/MongoDB manually (links below if needed)."
+    echo "Homebrew not found - FFmpeg/MongoDB/Python auto-install will be skipped. Install it from https://brew.sh, or install things manually (links below if needed)."
+fi
+
+if ! has python3; then
+    echo "python3 not found."
+
+    if [ "$HAS_BREW" -eq 1 ]; then
+        read -r -p "Install Python 3.12 now via Homebrew? (y/N) " installPython
+        if [ "$installPython" = "y" ] || [ "$installPython" = "Y" ]; then
+            brew install python@3.12
+        else
+            echo "Skipping Python install."
+        fi
+    fi
+
+    if ! has python3; then
+        echo "python3 still not found. Install Python 3.12+ (https://www.python.org/downloads/, or 'brew install python@3.12'), make sure it's on PATH, then re-run this script."
+        exit 1
+    fi
+    echo "Python is now available."
 fi
 
 # -- 1. Python virtual environment + dependencies -----------------------------
@@ -50,8 +69,8 @@ fi
 # `pip install torch` on macOS/Linux already includes Apple Silicon
 # (MPS/Metal) support automatically where applicable - no separate CUDA
 # index-url selection needed here. On Linux with an NVIDIA GPU, a CUDA
-# build can be installed manually afterward the same way install.ps1 does
-# it (see that file for the index-url pattern) if GPU acceleration matters.
+# build can be installed manually afterward the same way windows\install.ps1
+# does it (see that file for the index-url pattern) if GPU acceleration matters.
 step "Installing PyTorch"
 if ! venv/bin/python3 -m pip install torch; then
     echo "torch failed to install (see errors above). The app needs it to run - fix the error and re-run this script."
@@ -102,7 +121,16 @@ fi
 
 # -- Done -----------------------------------------------------------------------------
 step "Setup complete"
-echo "Run the pipeline (scraper + downloader + transcriber):  ./run.sh"
-echo "Run the API:                                            venv/bin/uvicorn api.main:app --reload"
-echo ""
 echo "Sanity check the database connection:  venv/bin/python3 -m scripts.db_utils summary"
+echo ""
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+read -r -p "Start Chamber Scribe now (pipeline + API in the background)? (y/N) " startNow
+if [ "$startNow" = "y" ] || [ "$startNow" = "Y" ]; then
+    "$SCRIPT_DIR/start.sh"
+else
+    echo "Start it later with:  ./macos-linux/start.sh"
+    echo "Or run it in the foreground instead:"
+    echo "  Pipeline:  ./macos-linux/run.sh"
+    echo "  API:       venv/bin/uvicorn api.main:app --reload"
+fi

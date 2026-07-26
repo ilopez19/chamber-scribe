@@ -2,13 +2,15 @@
 # Stops whatever start.sh started, using the PIDs it saved to .run/.
 # Safe to run even if nothing is running (says so and exits cleanly).
 #
-# Run from the repo root:  ./stop.sh
+# Run from the repo root:  ./macos-linux/stop.sh
 # This is a hard stop (kill), not a graceful shutdown request: a download
 # or transcription in progress gets killed mid-work rather than finishing
 # first. That's fine - claim_jobs()'s re-claim logic in downloader.py/
 # transcriber.py picks up anything left stuck on the next start, instead
 # of it staying stuck forever.
-# Windows: use stop.ps1 instead.
+# Windows: use windows\stop.ps1 instead.
+
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 stop_tracked() {
     local name="$1" pidfile="$2"
