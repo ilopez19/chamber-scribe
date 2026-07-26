@@ -28,3 +28,7 @@ Thumbs.db
 # Storage (downloaded media & captions are generated, not source)
 storage/audio/
 storage/captions/
+
+# start.ps1's PID tracking for stop.ps1/restart.ps1
+.run/
+logs/

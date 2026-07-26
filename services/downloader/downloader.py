@@ -1,3 +1,20 @@
+# ═══════════════════════════════════════════════════════════════════════
+# PIPELINE STAGE 2 of 3 — DOWNLOADER
+#   Reads:        MongoDB "jobs" collection, status=pending (or failed,
+#                 retrying) — claimed atomically via claim_jobs()
+#   Writes:       storage/audio/*.mp3, storage/captions/*.vtt (disk)
+#                 MongoDB "jobs" collection, status=downloaded/failed/excluded
+#   Triggered by: main.py's downloader_loop(), every 30s
+#   Next stage:   services/transcriber/transcriber.py
+#   Diagram:      design.svg
+# ═══════════════════════════════════════════════════════════════════════
+"""Downloader service orchestration.
+
+This module queries pending jobs, builds download plans using business
+rules, and executes downloads using strategy implementations (HLS, HTTP,
+VTT). It includes retry semantics and batching to limit resource usage.
+"""
+
 import asyncio
 import os
 from datetime import datetime, timezone
@@ -14,13 +31,6 @@ from services.downloader.strategies.vtt import VTTDownloadStrategy
 from shared.logging_config import get_logger
 
 logger = get_logger(__name__)
-
-"""Downloader service orchestration.
-
-This module queries pending jobs, builds download plans using business
-rules, and executes downloads using strategy implementations (HLS, HTTP,
-VTT). It includes retry semantics and batching to limit resource usage.
-"""
 
 MAX_RETRIES = JOB_MAX_RETRIES
 
@@ -160,12 +170,21 @@ async def run_downloads() -> None:
     # for the race a separate find()-then-update leaves open. retries==0
     # distinguishes a fresh PENDING job from a FAILED-and-retrying one for
     # the log line below, since both now share the same DOWNLOADING status.
+    #
+    # Also re-claims jobs already sitting in DOWNLOADING: if this process
+    # was killed (crash, container restart, `.\stop.ps1`) mid-download,
+    # nothing else ever moves that job out of DOWNLOADING, so without this
+    # it would stay stuck forever instead of being picked back up under a
+    # fresh claim_id next cycle. Mirrors how run_transcriptions() re-claims
+    # stuck PROCESSING jobs below.
     claimed = await claim_jobs(
         collection,
         query={
             "$or": [
                 # Fresh jobs ready to download
                 {"status": JobStatus.PENDING},
+                # Stuck from a previous run that died mid-download
+                {"status": JobStatus.DOWNLOADING},
                 # Download failures under the retry limit
                 {
                     "status": JobStatus.FAILED,

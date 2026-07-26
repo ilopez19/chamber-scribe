@@ -1,3 +1,15 @@
+# ═══════════════════════════════════════════════════════════════════════
+# PIPELINE STAGE — API (reads what the other 3 stages produced)
+#   Reads:        MongoDB "jobs", "transcripts", "tasks", "health" collections
+#   Writes:       nothing — read-only over HTTP
+#   Started by:   uvicorn api.main:app --reload  (separate process from
+#                 main.py — never talks to the pipeline loops directly,
+#                 only through MongoDB, including /health's heartbeat reads)
+#   Diagram:      design.svg
+# ═══════════════════════════════════════════════════════════════════════
+"""FastAPI app — see routes/ for one file per resource (jobs, transcripts,
+tasks, health)."""
+
 from fastapi import FastAPI
 from api.routes import jobs, transcripts, tasks, health
 from shared.db.database import ping

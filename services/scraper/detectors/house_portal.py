@@ -70,6 +70,16 @@ class HousePortalDetector(HTTPDetector):
                 date_text = item["date_text"]
                 download_url = f"{DOWNLOAD_BASE}/{filename}"
 
+                # item={} is deliberate, not a stub left unfinished: the House
+                # archive page (unlike the Senate's JSON API) never exposes
+                # duration or file size anywhere in its HTML — there's no
+                # field to read them from. That means duration_secs comes
+                # back as None for every House job (see extract_duration()
+                # in metadata_utils.py), and should_transcribe() in
+                # transcriber.py already special-cases None so House videos
+                # aren't silently excluded by the duration-too-short rule.
+                # A real fix would require a second request per video to a
+                # detail page, if one exists — not attempted here.
                 metadata = MetadataExtractor.normalize_portal_metadata(
                     item={},
                     source_name=self.source_name,

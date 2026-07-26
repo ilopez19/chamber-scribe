@@ -9,7 +9,7 @@ loop's heartbeat is older than a few times its own interval, that loop
 """
 
 from datetime import datetime, timezone
-from fastapi import APIRouter
+from fastapi import APIRouter, Response
 from shared.db.database import health_collection
 
 router = APIRouter(tags=["health"])
@@ -22,7 +22,7 @@ DEFAULT_INTERVAL_SECONDS = 30
 
 
 @router.get("/health")
-async def health():
+async def health(response: Response):
     docs = await health_collection().find({}).to_list(length=None)
     now = datetime.now(timezone.utc)
 
@@ -47,6 +47,11 @@ async def health():
             "last_cycle_ok": doc.get("ok", True),
             "seconds_since_last_heartbeat": round(age_seconds, 1),
         }
+
+    # 503 on degraded, not just a JSON field, so container/orchestrator
+    # healthchecks (Docker, k8s) that check the HTTP status actually catch
+    # a dead pipeline instead of seeing a "successful" 200 either way.
+    response.status_code = 200 if all_healthy else 503
 
     return {
         "status": "ok" if all_healthy else "degraded",

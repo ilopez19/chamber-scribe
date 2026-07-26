@@ -1,3 +1,11 @@
+# ═══════════════════════════════════════════════════════════════════════
+# PIPELINE STAGE 1 of 3 — SCRAPER
+#   Reads:        Senate/House portals (external HTTP, see detectors/)
+#   Writes:       MongoDB "jobs" collection, status=pending
+#   Triggered by: main.py's scraper_loop(), every SCRAPE_INTERVAL_SECONDS
+#   Next stage:   services/downloader/downloader.py
+#   Diagram:      design.svg
+# ═══════════════════════════════════════════════════════════════════════
 """
 Scraper orchestrator.
 

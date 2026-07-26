@@ -1,20 +1,14 @@
-import asyncio
-import os
-from datetime import datetime, timezone
-from bson import ObjectId
-
-from shared.config import JOB_MAX_RETRIES
-from shared.db.database import jobs_collection, transcripts_collection, tasks_collection, claim_jobs
-from shared.db.models.job import JobStatus
-from shared.db.models.transcript import new_transcript
-from shared.db.models.task import new_task
-from services.transcriber.config import MIN_DURATION_SECONDS
-from services.transcriber.engines.whisper import WhisperEngine
-from services.transcriber.engines.vtt_engine import VTTEngine
-from shared.logging_config import get_logger
-
-logger = get_logger(__name__)
-
+# ═══════════════════════════════════════════════════════════════════════
+# PIPELINE STAGE 3 of 3 — TRANSCRIBER
+#   Reads:        MongoDB "jobs" collection, status=downloaded (or
+#                 processing/failed, retrying) — claimed atomically via
+#                 claim_jobs(); storage/audio or storage/captions from disk
+#   Writes:       MongoDB "transcripts" + "tasks" collections
+#                 MongoDB "jobs" collection, status=transcribed/failed/excluded
+#   Triggered by: main.py's transcriber_loop(), every 30s
+#   Next stage:   api/ (serves the finished transcript over REST)
+#   Diagram:      design.svg
+# ═══════════════════════════════════════════════════════════════════════
 """Transcription orchestration.
 
 This module picks the appropriate transcription engine (VTT fast-path or
@@ -31,6 +25,23 @@ Notes:
   this worth processing" lives in a single place instead of being spread
   across detectors and download rules.
 """
+
+import asyncio
+import os
+from datetime import datetime, timezone
+from bson import ObjectId
+
+from shared.config import JOB_MAX_RETRIES
+from shared.db.database import jobs_collection, transcripts_collection, tasks_collection, claim_jobs
+from shared.db.models.job import JobStatus
+from shared.db.models.transcript import new_transcript
+from shared.db.models.task import new_task
+from services.transcriber.config import MIN_DURATION_SECONDS
+from services.transcriber.engines.whisper import WhisperEngine
+from services.transcriber.engines.vtt_engine import VTTEngine
+from shared.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 MAX_RETRIES = JOB_MAX_RETRIES
 RETRY_DELAY_SECONDS = 5  # base delay before retrying a failed transcription; doubles each attempt
