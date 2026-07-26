@@ -1,3 +1,4 @@
+# Download strategy for pre-existing WebVTT captions (Senate portal).
 import os
 import httpx
 from services.downloader.strategies.base import BaseDownloadStrategy

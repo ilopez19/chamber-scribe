@@ -1,3 +1,4 @@
+# Whisper device/model selection and timeout tuning for the transcriber.
 import torch
 from shared.logging_config import get_logger
 

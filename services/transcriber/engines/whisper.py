@@ -1,3 +1,4 @@
+# Transcription engine backed by faster-whisper, for videos with no VTT captions.
 import asyncio
 from faster_whisper import WhisperModel
 from services.transcriber.engines.base import BaseTranscriptionEngine

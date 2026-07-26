@@ -1,3 +1,4 @@
+# Shared base class for transcription engines (whisper.py, vtt_engine.py).
 from abc import ABC, abstractmethod
 
 

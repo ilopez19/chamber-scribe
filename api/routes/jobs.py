@@ -1,3 +1,4 @@
+# Job endpoints: summary counts, listing (filterable), and lookup by ID.
 from fastapi import APIRouter, HTTPException, Query
 from bson import ObjectId
 from shared.db.database import jobs_collection

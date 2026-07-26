@@ -1,3 +1,5 @@
+# Task endpoints: summary counts, listing (filterable), and lookup by ID.
+# A "task" is one transcription attempt — a job can have several.
 from fastapi import APIRouter, HTTPException, Query
 from bson import ObjectId
 from shared.db.database import tasks_collection

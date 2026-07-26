@@ -1,3 +1,4 @@
+# Shared base class for all download strategies (hls.py, http_audio.py, vtt.py).
 from abc import ABC, abstractmethod
 
 

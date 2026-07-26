@@ -1,3 +1,4 @@
+# Shared base classes for portal detectors (house_portal.py, senate_portal.py).
 from abc import ABC, abstractmethod
 from typing import Optional
 import httpx

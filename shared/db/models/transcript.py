@@ -1,3 +1,4 @@
+# Document builder for the "transcripts" collection.
 from datetime import datetime, timezone
 from typing import Optional
 

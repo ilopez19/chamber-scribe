@@ -1,3 +1,4 @@
+# Scrapes the Michigan House's public video archive page (HTML, not an API).
 import warnings
 from bs4 import BeautifulSoup
 from services.scraper.detectors.base import HTTPDetector

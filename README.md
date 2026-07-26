@@ -44,7 +44,7 @@ winget install -e --id MongoDB.Server
 copy .env.example .env
 ```
 
-torch from plain pip is CPU-only. If you have an NVIDIA GPU, get a CUDA build instead so Whisper actually uses it — check pytorch.org for the current CUDA tag, it changes over time (cu130/cu128/cu126 as of 2026); that's the URL used above.
+Plain `pip install torch` gives you a CPU-only build, so Whisper will still work but run slower. If you have an NVIDIA GPU, use the `--index-url` above instead to get a CUDA build so Whisper actually uses the GPU. The `cu130` in that URL is the CUDA version PyTorch was built against, and it changes over time — get the current one from [pytorch.org](https://pytorch.org/get-started/locally/) rather than trusting this README to stay up to date.
 
 **macOS/Linux:**
 
@@ -65,7 +65,7 @@ brew services start mongodb-community
 cp .env.example .env
 ```
 
-Plain `pip install torch` is CPU-only on Intel Macs/Linux, but already includes Apple Silicon (MPS) support automatically on M-series Macs — no separate index URL needed like on Windows.
+*Note: on M-series Macs, plain `pip install torch` already includes GPU (MPS) support — no separate index URL needed like on Windows.*
 
 | Variable | Description |
 |---|---|
@@ -173,10 +173,9 @@ tests/                     pytest suite — see "Notes for contributors" below
 
 storage/                   Downloaded audio/captions (gitignored, created at runtime)
 
-logs/                      pipeline/api .out.log + .err.log (gitignored) — only used by start.ps1/start.sh's
-                           background mode; auto-created by start.ps1/start.sh, not needed for run.bat/run.sh
-                           (foreground prints straight to your terminal)
-.run/                      start.ps1/start.sh's PID files (gitignored) — same background-mode-only scope as logs/
+logs/                      Output from start.ps1/start.sh's background mode only (gitignored, auto-created).
+                           run.bat/run.sh print straight to your terminal instead, so this stays empty then.
+.run/                      PID files start.ps1/start.sh use to track/stop the background process (gitignored).
 ```
 
 **Rule of thumb:** each pipeline stage only imports from its own folder or `shared/` — never from another stage's folder. If you're adding a new portal, only `scraper/` changes; a new download method, only `downloader/`; and so on.

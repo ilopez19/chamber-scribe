@@ -1,3 +1,5 @@
+# Loads .env once at import time; every module reads these values from here
+# rather than calling os.environ directly, so there's one source of truth.
 import os
 from dotenv import load_dotenv
 from shared.logging_config import get_logger

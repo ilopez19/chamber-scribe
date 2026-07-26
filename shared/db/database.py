@@ -1,3 +1,5 @@
+# MongoDB connection, collection accessors, and the atomic claim_jobs()/
+# heartbeat() helpers every pipeline stage depends on.
 import asyncio
 import uuid
 from datetime import datetime, timezone

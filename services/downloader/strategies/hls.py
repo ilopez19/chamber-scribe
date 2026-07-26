@@ -1,3 +1,4 @@
+# Download strategy for HLS/CloudFront-streamed video (Senate portal).
 import asyncio
 import os
 from services.downloader.config import DOWNLOAD_TIMEOUT

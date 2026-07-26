@@ -1,3 +1,4 @@
+# Download strategy for progressive HTTP video (House portal).
 import asyncio
 import os
 from services.downloader.config import DOWNLOAD_TIMEOUT

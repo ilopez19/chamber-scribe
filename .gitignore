@@ -14,10 +14,6 @@ env/
 .env.*
 !.env.example
 
-# Local Helm value overrides (real Mongo URIs, etc.) — not part of the
-# committed chart, only used locally if the placeholder chart gets filled in.
-helm/chamber-scribe/values.local.yaml
-
 # Local-only dev utilities (db_utils.py etc.) — not part of the app,
 # never committed, everyone keeps/writes their own.
 scripts/

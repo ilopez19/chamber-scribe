@@ -1,3 +1,4 @@
+# Document builder for the "tasks" collection (one record per transcription attempt).
 from datetime import datetime, timezone
 from typing import Optional
 

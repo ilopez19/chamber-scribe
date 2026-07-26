@@ -1,3 +1,4 @@
+# Transcript endpoints: listing, full-text search, and lookup by ID or job_id.
 from fastapi import APIRouter, HTTPException, Path, Query
 from bson import ObjectId
 from shared.db.database import transcripts_collection, jobs_collection
