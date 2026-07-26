@@ -26,8 +26,8 @@ function Stop-Tracked($name, $pidFile) {
         # Plain Stop-Process only kills the tracked PID itself, leaving any
         # child it spawned (e.g. an in-progress ffmpeg download) running as
         # an orphan that still holds its output file open - which then
-        # blocks things like `scripts.db_utils clear-files` from deleting
-        # it even after this script reports the pipeline as stopped.
+        # blocks anything (a re-run, manual cleanup) from deleting it
+        # even after this script reports the pipeline as stopped.
         & taskkill /PID $targetId /T /F | Out-Null
         Write-Host "Stopped $name (PID $targetId, including any child processes)." -ForegroundColor Green
     } else {

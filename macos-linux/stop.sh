@@ -23,8 +23,8 @@ stop_tracked() {
     if kill -0 "$pid" 2>/dev/null; then
         # Kill child processes first (e.g. an in-progress ffmpeg download) -
         # killing just the parent PID leaves them running as orphans that
-        # still hold their output file open, which then blocks things like
-        # `scripts.db_utils clear-files` from deleting it even after this
+        # still hold their output file open, which then blocks anything
+        # (a re-run, manual cleanup) from deleting it even after this
         # script reports the pipeline as stopped. pkill -P works on both
         # macOS and Linux without requiring the process to have been
         # started in its own session (setsid isn't available on macOS).

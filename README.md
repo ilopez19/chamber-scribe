@@ -1,8 +1,10 @@
 # Chamber Scribe
 
+[![CI](https://github.com/ilopez19/chamber-scribe/actions/workflows/ci.yml/badge.svg)](https://github.com/ilopez19/chamber-scribe/actions/workflows/ci.yml)
+
 Scrapes Michigan legislative hearing videos (Senate + House), downloads their audio/captions, transcribes them, and serves the transcripts over a REST API.
 
-![Architecture](design.svg)
+![Architecture](images/design.svg)
 
 ## About me
 
@@ -18,7 +20,7 @@ Please don't hesitate to ask any question, excited to chat!
 1. **Scraper** (`services/scraper/`) polls the Senate API and House HTML pages every `SCRAPE_INTERVAL_SECONDS` (default 3600s) and queues every video it finds into MongoDB — nothing gets filtered out here.
 2. **Downloader** (`services/downloader/`) picks up queued jobs every 30s and pulls audio only (never the full video) into `storage/audio/` — VTT captions straight from CloudFront for captioned Senate videos, FFmpeg extraction for everything else.
 3. **Transcriber** (`services/transcriber/`) picks up downloaded jobs every 30s. `should_transcribe()` is the one place that decides if a job is actually worth processing (e.g. too short) — everything else gets transcribed: instantly if a VTT exists, otherwise via Whisper. The MP3 is deleted afterward either way.
-4. **Two ways a job can stop without a transcript**: `failed` means a genuine error (network failure, engine crash, missing file) — it's retried up to `JOB_MAX_RETRIES` times (default 3), then left failed and automatically re-queued from scratch next time the scraper rediscovers the video. `excluded` means a deliberate business-rule decision (too short, a live-channel entry with no stable recording) — not an error, not retried, and not re-queued on rediscovery, since the reason won't change. `failed` is the one worth checking; `excluded` is expected. `scripts/list_failed.py` and `scripts/list_excluded.py` show each grouped by reason.
+4. **Two ways a job can stop without a transcript**: `failed` means a genuine error (network failure, engine crash, missing file) — it's retried up to `JOB_MAX_RETRIES` times (default 3), then left failed and automatically re-queued from scratch next time the scraper rediscovers the video. `excluded` means a deliberate business-rule decision (too short, a live-channel entry with no stable recording) — not an error, not retried, and not re-queued on rediscovery, since the reason won't change. `failed` is the one worth checking; `excluded` is expected. `GET /jobs?status=failed` and `GET /jobs?status=excluded` list each — the `error` field on every returned job holds the specific reason.
 5. **REST API** (`api/`) exposes jobs, transcripts, and per-attempt task logs over HTTP. `GET /health` reports on the pipeline process too, not just the API — each pipeline loop writes a heartbeat to Mongo every cycle, and `/health` reads those, since the API and the pipeline are separate processes that never talk directly. Returns HTTP 503 (not just a JSON field) if any loop's heartbeat has gone stale, so container/orchestrator healthchecks actually catch it.
 6. **The pipeline runs under a restart-with-backoff wrapper** (`main.py`'s `run_forever()`) — if something gets past the individual loops' own error handling and crashes the whole process, it restarts automatically instead of staying down.
 
@@ -75,7 +77,7 @@ Plain `pip install torch` is CPU-only on Intel Macs/Linux, but already includes 
 | `JOB_MAX_RETRIES` | Optional, default 3. Retries before giving up on a job / re-queue threshold |
 | `HF_HUB_DISABLE_SYMLINKS_WARNING` | Suppresses a HuggingFace warning on Windows (used by faster-whisper) |
 
-Check everything's connected: `venv\Scripts\python.exe -m scripts.db_utils summary` (Windows) or `venv/bin/python3 -m scripts.db_utils summary` (macOS/Linux)
+Once the pipeline + API are running (see "Running" below), check everything's connected: `curl http://localhost:8000/health` — `"status": "ok"` means the API and Mongo are both reachable and every pipeline loop has heartbeated recently.
 
 To test setup from scratch, `.\windows\uninstall.ps1` (Windows) or `./macos-linux/uninstall.sh` (macOS/Linux) removes the venv and uninstalls FFmpeg/MongoDB (asks for confirmation first).
 
@@ -103,16 +105,20 @@ Each pair is the pipeline (scraper + downloader + transcriber loops) and the RES
 
 ```
 cp .env.example .env
-docker compose up --build
+docker compose -f docker/docker-compose.yml up --build
 ```
 
 This starts three containers — `mongo`, `pipeline` (the scraper/downloader/transcriber loops), and `api` (on `localhost:8000`) — matching the same three-process split as running it locally, just containerized. The `api` container's healthcheck hits `/health`, which already reports on the `pipeline` container too via Mongo heartbeats, so `docker compose ps` reflects the whole system's health, not just the API's.
 
-The image installs the CPU build of torch, so Whisper runs on CPU in a container by default. For GPU transcription in Docker you'd need an `nvidia/cuda` base image, the NVIDIA Container Toolkit on the host, and a CUDA torch build in the `Dockerfile` instead — not set up here, since it adds a hard dependency on host GPU passthrough that a basic container shouldn't assume.
+The image installs the CPU build of torch, so Whisper runs on CPU in a container by default. For GPU transcription in Docker you'd need an `nvidia/cuda` base image, the NVIDIA Container Toolkit on the host, and a CUDA torch build in the `docker/Dockerfile` instead — not set up here, since it adds a hard dependency on host GPU passthrough that a basic container shouldn't assume.
+
+### Running with Kubernetes
+
+A Helm chart scaffold exists at `helm/chamber-scribe/` (`Chart.yaml`, `values.yaml`, `templates/` with one file per resource) reserving the layout for a Helm-based deploy, but the files are currently empty placeholders — not filled in yet. `.github/workflows/ci.yml` has a manually-triggered `deploy` job (Actions tab → CI → Run workflow) wired up for whenever this chart gets filled in, using a `KUBECONFIG` repository secret to reach a real cluster; until both exist, that job has nothing to run.
 
 ### Stopping / restarting
 
-**Docker:** `docker compose down` stops everything, `docker compose restart` restarts it, `docker compose up -d` starts it detached in the background. Containers also come back on their own after a crash or host reboot (`restart: unless-stopped` in `docker-compose.yml`).
+**Docker:** `docker compose -f docker/docker-compose.yml down` stops everything, `... restart` restarts it, `... up -d` starts it detached in the background. Containers also come back on their own after a crash or host reboot (`restart: unless-stopped` in `docker/docker-compose.yml`).
 
 **Local (no Docker):** `run.bat`/`run.sh` and `uvicorn` (from "Running" above) run in the foreground of whatever terminal started them — closing that terminal or hitting Ctrl+C stops them. For running both in the background instead, with a way to stop/restart them from elsewhere:
 
@@ -133,6 +139,8 @@ The image installs the CPU build of torch, so Whisper runs on CPU in a container
 ```
 
 `start` runs the pipeline + API in the background and logs to `logs/`; `stop` stops whatever `start` started; `restart` is `stop` then `start`. Both write PIDs to `.run/` so `stop`/`restart` know what to stop later. Either is a hard stop (not a graceful shutdown signal), so anything mid-download or mid-transcription gets killed rather than finishing first. That's expected — `claim_jobs()`'s re-claim logic picks those jobs back up automatically next time the pipeline starts, instead of leaving them stuck.
+
+**Kubernetes:** not applicable yet — see "Running with Kubernetes" above, the Helm chart is a placeholder scaffold, not a working deploy.
 
 ## Where things live
 
@@ -155,11 +163,18 @@ macos-linux/               macOS/Linux setup/lifecycle scripts (bash) — same j
   stop.sh
   restart.sh
 
+.github/workflows/ci.yml   GitHub Actions: pytest on every push/PR, Docker build + GHCR push on main, manual Helm deploy job — see "Running with Kubernetes" above
+
+helm/chamber-scribe/       Placeholder scaffold for a future Helm chart — files exist (Chart.yaml, values.yaml,
+                           templates/ with one file per resource) but are currently empty, not a working chart yet
+
 pytest.ini                 Test config
 requirements-dev.txt       Adds pytest on top of requirements.txt
-Dockerfile                 One image, shared by the pipeline and api containers (command decides which runs)
-docker-compose.yml         mongo + pipeline + api, wired together — see "Running with Docker" above
-.dockerignore               Keeps venv/storage/tests out of the image build context
+.dockerignore               Keeps venv/storage/tests out of the image build context — stays at repo root (see its own comment for why)
+
+docker/                    Docker build files — see "Running with Docker" above
+  Dockerfile                 One image, shared by the pipeline and api containers (command decides which runs)
+  docker-compose.yml         mongo + pipeline + api, wired together; builds with repo root as context
 
 api/                       REST API (FastAPI)
   main.py                    App setup — run with uvicorn, not directly
@@ -174,7 +189,7 @@ services/                  The three pipeline stages, one folder each
   downloader/
     downloader.py              Orchestrator — works through queued jobs
     rules.py                   Decides *how* to download a job (which strategy, what filename)
-    strategies/                One file per download method: hls.py, http.py, http_audio.py, vtt.py
+    strategies/                One file per download method: hls.py, http_audio.py, vtt.py
   transcriber/
     transcriber.py             Orchestrator — has should_transcribe() and the retry loop
     engines/                   whisper.py and vtt_engine.py — the two ways to get text from audio
@@ -185,16 +200,15 @@ shared/                    Code every stage depends on
   db/database.py              MongoDB connection, claim_jobs() (atomic job claiming), heartbeat()
   db/models/                  One file per collection: job.py, transcript.py, task.py
 
-scripts/                   Manual maintenance — not run automatically
-  db_utils.py                 summary / clear / clear-files / reset-failed / fix-audio
-  reset_job.py                Reset one job back to pending by URL substring
-  list_failed.py               Failed jobs grouped by reason — the ones to actually check
-  list_excluded.py             Excluded jobs grouped by reason — expected, not errors
-  timing_report.py             Real scrape/download/transcribe timings from job history, by source
-
 tests/                     pytest suite — see "Notes for contributors" below
 
 storage/                   Downloaded audio/captions (gitignored, created at runtime)
+
+logs/                      pipeline/api .out.log + .err.log (gitignored) — only used by start.ps1/start.sh's
+                           background mode; auto-created by start.ps1/start.sh, not needed for run.bat/run.sh
+                           (foreground prints straight to your terminal) or Docker/Kubernetes (those capture
+                           stdout/stderr themselves — see "docker compose logs" / "kubectl logs" above)
+.run/                      start.ps1/start.sh's PID files (gitignored) — same background-mode-only scope as logs/
 ```
 
 **Rule of thumb:** each pipeline stage only imports from its own folder or `shared/` — never from another stage's folder. If you're adding a new portal, only `scraper/` changes; a new download method, only `downloader/`; and so on.
@@ -202,4 +216,4 @@ storage/                   Downloaded audio/captions (gitignored, created at run
 ## Notes for contributors
 
 - Tests: `pip install -r requirements-dev.txt` then `python -m pytest`. Covers the business-logic-heavy pieces — `should_transcribe()`, VTT parsing, `DownloadRules.build_plan()` (including the live-channel exclusion), portal validation, dedup, and `claim_jobs()`'s concurrency guarantee (via an in-memory fake collection, so it runs without a real MongoDB instance). `tests/conftest.py` stubs `torch`/`faster_whisper` so the suite doesn't need a multi-GB ML install or a GPU just to test pure functions.
-- `scripts/db_utils.py` and `scripts/reset_job.py` are manual tools — run them yourself when needed, they're not part of the automated pipeline.
+- There's no separate CLI for maintenance/debugging — the API is read-only by design (see `api/main.py`), so inspecting jobs/transcripts/tasks goes through the endpoints above. Anything the API doesn't expose (resetting a job, clearing a collection) means connecting directly, e.g. `mongosh $MONGO_URI`.

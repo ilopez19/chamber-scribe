@@ -209,7 +209,7 @@ if (-not (Test-Path ".\.env")) {
 
 # -- Done -----------------------------------------------------------------------------
 Write-Step "Setup complete"
-Write-Host "Sanity check the database connection:  .\venv\Scripts\python.exe -m scripts.db_utils summary"
+Write-Host "Once running, sanity check everything's connected:  curl http://localhost:8000/health"
 Write-Host ""
 
 $startNow = Read-Host "Start Chamber Scribe now (pipeline + API in the background)? (y/N)"

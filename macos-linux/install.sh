@@ -155,7 +155,7 @@ fi
 
 # -- Done -----------------------------------------------------------------------------
 step "Setup complete"
-echo "Sanity check the database connection:  venv/bin/python3 -m scripts.db_utils summary"
+echo "Once running, sanity check everything's connected:  curl http://localhost:8000/health"
 echo ""
 
 read -r -p "Start Chamber Scribe now (pipeline + API in the background)? (y/N) " startNow
