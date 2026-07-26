@@ -1,18 +1,17 @@
 from abc import ABC, abstractmethod
 
 
+# Every download strategy extends this; adding a new strategy means one
+# new file and zero changes to the downloader.
 class BaseDownloadStrategy(ABC):
-    """
-    Every download strategy extends this.
-    Adding a new strategy = one new file, zero changes to the downloader.
-    """
 
+    def __init__(self, verify_ssl: bool = True):
+        # Only HTTPAudioExtractStrategy reads self._verify (skips cert
+        # checking for House's broken TLS); living here means any future
+        # HTTP-based strategy inherits it for free.
+        self._verify = verify_ssl
+
+    # Downloads url to destination; returns True on success, False on failure.
     @abstractmethod
     async def download(self, url: str, destination: str) -> bool:
-        """
-        Download a file from url to destination path.
-
-        Returns:
-            True if successful, False if failed
-        """
         pass

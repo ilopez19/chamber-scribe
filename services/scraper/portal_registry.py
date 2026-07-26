@@ -1,56 +1,36 @@
-"""
-Portal registry — business logic for each video portal.
-
-This is the single place that defines:
-- What type each portal is (JSON API, HTML, auth-required, player page)
-- How to validate a successful scrape (minimum videos, required fields)
-- Retry config (how many times, how long to wait)
-- Alert thresholds (when to notify that something is broken)
-
-Adding a new portal = add one entry to PORTAL_REGISTRY.
-No other files need to change.
-"""
+# Portal registry — the single place defining each portal's type,
+# validation rules, retry config, and alert thresholds. Adding a new
+# portal = one entry in PORTAL_REGISTRY, no other files need to change.
 
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
 
 
+# How a detector should fetch/parse a portal's content.
 class PortalType(str, Enum):
-    """Enumeration of portal scraping strategies.
-
-    Choose the portal type to indicate how detectors should fetch and parse
-    content. This drives which detector implementation and validation logic
-    are appropriate for each source.
-    """
-
     JSON_API      = "json_api"       # Returns structured JSON — e.g. Michigan Senate
     HTML_PAGE     = "html_page"      # Static HTML that needs parsing — e.g. Michigan House
     AUTH_REQUIRED = "auth_required"  # Requires login before scraping
     PLAYER_PAGE   = "player_page"    # Needs Playwright to render JS before scraping
 
 
+# Business rules for one portal — validation, retry, and alert settings.
 @dataclass
 class PortalConfig:
-    """Configuration and business rules for a single video portal.
-
-    PortalConfig centralizes operational settings for each portal so the
-    scraper and its detectors can validate results consistently and apply the
-    correct retry/alert behaviour. Keep this lightweight — heavy logic
-    belongs in detectors or the scraper orchestration.
-    """
 
     # Identity
     source_name: str
     display_name: str
     portal_type: PortalType
 
-    # Validation — what counts as a successful scrape
+    # Validation — added to database
     min_videos_expected: int = 1
     required_metadata_fields: list = field(default_factory=lambda: ["title", "portal_id"])
 
     # URL and response validation
     expected_url_pattern: str = ""        # regex the video URL must match
+
     # catches CDN/URL structure changes
     expected_response_type: str = "json"  # "json" or "html"
     # catches JS rendering changes
@@ -96,8 +76,10 @@ PORTAL_REGISTRY: dict[str, PortalConfig] = {
         max_retries=3,
         retry_delay_seconds=30,
         alert_after_failures=3,
-        notes="CloudFront CDN for HLS streams. API returns JSON arrays per tab. "
-              "Captioned videos have a matching .vtt on CloudFront.",
+        notes="CloudFront CDN for HLS streams; video listing is a single "
+              "paginated POST endpoint (see senate_portal.py — the Senate "
+              "has changed this before). Captioned videos have a matching "
+              ".vtt on CloudFront.",
     ),
 
     "michigan_house": PortalConfig(
@@ -135,29 +117,15 @@ PORTAL_REGISTRY: dict[str, PortalConfig] = {
 }
 
 
+# Returns the PortalConfig for source_name, or None if unknown.
 def get_portal_config(source_name: str) -> Optional[PortalConfig]:
-    """Return the PortalConfig for ``source_name`` or ``None`` if unknown.
-
-    Lookup is intentionally trivial — the registry is static and intended to
-    be updated when adding or maintaining portals. Consumers should handle
-    ``None`` to allow running detectors without validation when necessary.
-    """
     return PORTAL_REGISTRY.get(source_name)
 
 
+# Validates scraped videos against a portal's rules: any videos at all,
+# minimum count (with seasonal override), required fields present, and
+# URL pattern match. Returns (is_valid, reason) — reason is "" if valid.
 def validate_videos(videos: list[dict], config: PortalConfig) -> tuple[bool, str]:
-    """
-    Validate a list of scraped videos against the portal's business rules.
-
-    Checks (in order):
-    1. At least one video returned
-    2. Meets minimum video count (with seasonal override)
-    3. All required metadata fields present
-    4. Video URLs match the expected pattern
-
-    Returns:
-        (is_valid, reason) — reason is empty string if valid
-    """
     import re
     from datetime import datetime
 
@@ -190,9 +158,8 @@ def validate_videos(videos: list[dict], config: PortalConfig) -> tuple[bool, str
             if not metadata.get(f)
         ]
         if missing:
-            # Missing core fields indicates a breaking change in the portal
-            # data shape (or a bug in the detector). Fail-fast so operators
-            # notice and can update the detector or registry.
+            # Missing core fields usually means the portal's data shape
+            # changed (or the detector has a bug) — fail loudly.
             return False, (
                 f"Video missing required fields: {missing} "
                 f"(url={video.get('video_url', 'unknown')})"
@@ -204,9 +171,8 @@ def validate_videos(videos: list[dict], config: PortalConfig) -> tuple[bool, str
         for video in videos:
             url = video.get("video_url", "")
             if not pattern.search(url):
-                # A URL format change often means the CDN or storage layout has
-                # changed; surface this quickly so the download rules can be
-                # adjusted before large-scale failures occur.
+                # Usually means the CDN/storage layout changed — surface it
+                # before it causes large-scale download failures.
                 return False, (
                     f"Video URL does not match expected pattern "
                     f"'{config.expected_url_pattern}': {url}"

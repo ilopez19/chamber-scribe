@@ -1,20 +1,11 @@
 from abc import ABC, abstractmethod
 
 
+# All transcription engines extend this.
 class BaseTranscriptionEngine(ABC):
-    """All transcription engines extend this."""
 
+    # Transcribes audio_path; returns {text, segments: [{start, end, text}],
+    # language, engine}.
     @abstractmethod
     async def transcribe(self, audio_path: str) -> dict:
-        """
-        Transcribe an audio file.
-
-        Returns:
-            {
-                "text": str,           # full transcript
-                "segments": list,      # [{start, end, text}]
-                "language": str,       # detected language
-                "engine": str,         # which engine produced this
-            }
-        """
         pass

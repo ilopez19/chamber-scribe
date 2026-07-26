@@ -3,9 +3,17 @@
 # how they actually run in production (separate processes that only ever
 # talk to each other through MongoDB, never direct RPC — see design.svg).
 #
-# Usage:
-#   cp .env.example .env      # first time only
-#   docker compose up --build
+# This file lives in docker/, but the build context below is the repo root
+# (".."), since the Dockerfile's `COPY . .` needs the whole project, not
+# just this folder. Run it either from repo root:
+#   docker compose -f docker/docker-compose.yml up --build
+# or from inside docker/:
+#   cd docker && docker compose up --build
+# Both resolve env_file/context the same way, since compose treats the
+# directory of the first compose file as the project directory either way.
+#
+# Usage (first time only):
+#   cp .env.example .env
 
 services:
   mongo:
@@ -17,10 +25,12 @@ services:
     # need it, and they reach it over the compose network by service name.
 
   pipeline:
-    build: .
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
     command: ["python", "main.py"]
     restart: unless-stopped
-    env_file: .env
+    env_file: ../.env
     environment:
       # Overrides whatever's in .env — inside compose, Mongo is reachable
       # by service name, not localhost.
@@ -34,10 +44,12 @@ services:
       - storage:/app/storage
 
   api:
-    build: .
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
     command: ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
     restart: unless-stopped
-    env_file: .env
+    env_file: ../.env
     environment:
       MONGO_URI: mongodb://mongo:27017
     depends_on:

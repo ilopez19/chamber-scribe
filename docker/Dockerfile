@@ -1,5 +1,11 @@
 # Chamber Scribe — production container.
 #
+# Lives in docker/, but must be built with the repo root as context (not
+# this folder), since COPY . . below needs the whole project:
+#   docker build -f docker/Dockerfile -t chamber-scribe:latest .
+# docker-compose.yml (same folder) already does this via its
+# `context: .. / dockerfile: docker/Dockerfile` build block.
+#
 # Builds one image used by all three processes (pipeline, API) — which
 # process runs is decided by the command, not the image (see
 # docker-compose.yml). This keeps the image simple: one Dockerfile, one

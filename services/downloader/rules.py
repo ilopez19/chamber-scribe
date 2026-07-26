@@ -1,11 +1,7 @@
-"""
-Business rules for the downloader.
+# Business rules for the downloader — all decisions about HOW a job
+# gets downloaded live here; change behavior by editing only this file.
 
-All decisions about HOW a job should be downloaded live here.
-Change download behaviour by updating this file only.
-"""
-
-from services.downloader.config import (
+from shared.media_urls import (
     CAPTION_URL_TEMPLATE,
     AUDIO_URL_TEMPLATE,
 )
@@ -14,51 +10,31 @@ from shared.logging_config import get_logger
 logger = get_logger(__name__)
 
 
+# What should be downloaded for a single job; built by DownloadRules and
+# executed by the downloader.
 class DownloadPlan:
-    """
-    Represents what should be downloaded for a single job.
-    Built by DownloadRules and executed by the downloader.
-    """
 
     def __init__(self):
         self.downloads = []  # list of {url, destination, strategy}
 
+    # Adds one download action to the plan.
     def add(self, url: str, destination: str, strategy: str):
-        """Add an entry describing a single download action.
-
-        This small wrapper keeps the DownloadPlan structure consistent and is
-        intentionally simple; higher-level decision logic lives in
-        ``DownloadRules``.
-        """
         self.downloads.append({
             "url": url,
             "destination": destination,
             "strategy": strategy,
         })
 
+    # True when no downloads have been scheduled; the downloader treats
+    # an empty plan as a signal to skip the job.
     def is_empty(self) -> bool:
-        """Return True when no downloads have been scheduled.
-
-        The downloader interprets an empty plan as a signal to skip the job.
-        """
         return len(self.downloads) == 0
 
 
+# Decides what to download per job. Senate: captioned -> VTT only,
+# uncaptioned -> audio via HLS. House: extract audio directly via FFmpeg.
+# Adding a new portal: add an elif block here and in portal_registry.py.
 class DownloadRules:
-    """
-    Determines what to download for each job based on business rules.
-
-    Senate rules (in priority order):
-    1. If captioned=True  → download VTT only (transcriber uses VTT fast path)
-                            skip audio entirely — saves GPU time + bandwidth
-    2. If captioned=False → download audio only (transcriber uses Whisper)
-
-    House rules:
-    1. Extract audio directly from the HTTP video URL via FFmpeg — the raw
-       video is never written to disk, only the extracted audio track.
-
-    Adding a new portal: add an elif block here and in portal_registry.py.
-    """
 
     AUDIO_DIR = "storage/audio"
     CAPTION_DIR = "storage/captions"
@@ -77,29 +53,15 @@ class DownloadRules:
         if source == "michigan_senate" and portal_id:
             title = metadata.get("title", "")
 
-            # "Live Stream N" entries (and, it turns out, entries with no
-            # title at all — metadata_utils defaults a missing filename to
-            # "untitled") are per-channel slots (e.g. "ch1", "ch2"), not
-            # one-time recordings — confirmed via the portal's own
-            # getLive/infoLive API and by requesting the channel manifest
-            # directly (vod_clients/misenate/live/ch1/video.m3u8 returns a
-            # live, continuously-updating stream with no video ID in the
-            # URL at all). Our normal on-demand URL template below doesn't
-            # apply to them — every properly-titled job has downloaded
-            # successfully from it, and every untitled one has failed
-            # against it, which is why missing title is being used as the
-            # signal here. Treating one as a normal video would risk
-            # silently never re-checking a channel that gets reused later
-            # with different content, so these are skipped rather than
-            # guessed at.
+            # "Live Stream N" / untitled entries are per-channel slots (e.g.
+            # "ch1"), not one-time recordings — confirmed via the portal's
+            # getLive/infoLive API, so they're skipped rather than guessed at.
             if title.lower().startswith("live stream") or title.strip().lower() in ("", "untitled"):
                 logger.info(f"[rules] Senate — skipping live-channel entry (no stable recording): {title or 'untitled'}")
                 return plan
 
             if captioned:
-                # Fast path — if captions exist we prefer the VTT route.
-                # Business rationale: parsing VTT is orders of magnitude faster
-                # than running Whisper on audio (saves GPU time and cost).
+                # Fast path — parsing VTT is far cheaper than running Whisper.
                 vtt_dest = f"{DownloadRules.CAPTION_DIR}/{source}/{portal_id}.vtt"
                 vtt_url = CAPTION_URL_TEMPLATE.format(portal_id=portal_id)
                 plan.add(vtt_url, vtt_dest, "vtt")
@@ -107,9 +69,7 @@ class DownloadRules:
                 logger.info(f"[rules] Senate captioned — VTT only: {portal_id}")
 
             else:
-                # No captions — fall back to audio download so Whisper can
-                # generate a transcript. We prefer HLS strategy for Senate
-                # because media is served via CloudFront HLS manifests.
+                # No captions — fall back to HLS audio for Whisper to transcribe.
                 audio_dest = f"{DownloadRules.AUDIO_DIR}/{source}/{portal_id}.mp3"
                 audio_url = AUDIO_URL_TEMPLATE.format(portal_id=portal_id)
                 plan.add(audio_url, audio_dest, "hls")
@@ -118,10 +78,9 @@ class DownloadRules:
 
         # ── Rule: Michigan House ──────────────────────────────────────────────
         elif source == "michigan_house":
-            # House serves static MP4 files. FFmpeg extracts the audio
-            # directly from the source URL — the full video is never
-            # downloaded to disk. Note: House URLs require skipping SSL
-            # verification, handled in HTTPAudioExtractStrategy elsewhere.
+            # FFmpeg extracts audio directly from the source URL; the full
+            # video is never written to disk. SSL verification is skipped
+            # for House in HTTPAudioExtractStrategy (bad certs).
             filename = metadata.get("filename", f"{portal_id}.mp4")
             stem = filename[:-4] if filename.endswith(".mp4") else filename
             audio_dest = f"{DownloadRules.AUDIO_DIR}/{source}/{stem}.mp3"

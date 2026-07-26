@@ -6,15 +6,9 @@
 #   Next stage:   services/downloader/downloader.py
 #   Diagram:      design.svg
 # ═══════════════════════════════════════════════════════════════════════
-"""
-Scraper orchestrator.
-
-Runs all registered detectors and queues every video they find — nothing
-gets filtered out here. Validation against portal business rules (expected
-video count, required fields, URL shape) runs as a diagnostic check that
-alerts loudly on drift but never blocks videos from being queued; retries
-with exponential backoff are for genuine failures only.
-"""
+# Runs every registered detector and queues every video found — nothing
+# gets filtered out here. Validation is a diagnostic-only check; it never
+# blocks a video from being queued.
 
 import asyncio
 from datetime import datetime, timezone
@@ -29,10 +23,8 @@ from shared.logging_config import get_logger
 
 logger = get_logger(__name__)
 
-# Once a failed job's retries reach downloader.py/transcriber.py's shared
-# JOB_MAX_RETRIES ceiling, neither stage will pick it up again on its own —
-# that's our signal it's safe to re-queue on the next scrape instead of
-# leaving it stuck forever.
+# Once a failed job hits downloader.py/transcriber.py's shared retry
+# ceiling, neither stage will pick it up again — safe to re-queue it here.
 EXHAUSTED_RETRIES = JOB_MAX_RETRIES
 
 # ── Detector registry ─────────────────────────────────────────────────────────
@@ -45,11 +37,9 @@ DETECTORS = [
 
 # ── Alert system ─────────────────────────────────────────────────────────────
 
+# Sends an alert when a portal keeps failing; currently just logs, swap
+# in email/Slack/webhook later.
 def _alert(source_name: str, message: str) -> None:
-    """
-    Send an alert when a portal keeps failing.
-    Currently prints to console — replace with email/Slack/webhook later.
-    """
     timestamp = datetime.now(timezone.utc).isoformat()
     logger.warning(f"\n{'='*60}")
     logger.warning(f"[ALERT] {timestamp}")
@@ -63,24 +53,13 @@ def _alert(source_name: str, message: str) -> None:
 
 
 # ── Failure tracking ──────────────────────────────────────────────────────────
-# Tracks consecutive failures per portal in memory.
-# Resets on success. Persists for the life of the process.
+# Consecutive failures per portal, in memory; resets on success.
 _consecutive_failures: dict[str, int] = {}
 
 
+# Runs one detector with retries; a validation failure only alerts, it
+# never discards videos the detector actually returned.
 async def _scrape_with_retry(detector) -> list[dict]:
-    """
-    Run a detector with retry logic. Validation against portal business
-    rules (expected video count, required fields, URL shape) is a health
-    check on the portal's format, not a judgment on individual videos —
-    so a validation failure raises a loud alert but does NOT discard the
-    scrape results. Every video the detector actually returned still gets
-    queued; retries here are only for genuine failures (crashes, timeouts,
-    network errors), since retrying can't fix a schema mismatch anyway.
-
-    Returns:
-        List of video dicts, or empty list if all retries failed outright.
-    """
     source = detector.source_name
     config = get_portal_config(source)
 
@@ -100,9 +79,8 @@ async def _scrape_with_retry(detector) -> list[dict]:
 
             videos = await detector.get_new_videos()
 
-            # Validation is a diagnostic signal, not a gate — a failure
-            # means the portal's shape may have changed and an operator
-            # should look, but every video found still gets queued below.
+            # A validation failure is a signal to look, not a gate — every
+            # video found still gets queued below either way.
             is_valid, reason = validate_videos(videos, config)
             if not is_valid:
                 logger.warning(f"[scraper] ⚠️  Validation warning for {config.display_name}: {reason}")
@@ -111,8 +89,8 @@ async def _scrape_with_retry(detector) -> list[dict]:
                     message=f"Validation warning (videos still queued as usual): {reason}",
                 )
 
-            # Success — reset failure counter. This tracks whether the
-            # scrape itself completed, independent of validation outcome.
+            # Success — reset the failure counter (tracks the scrape itself,
+            # independent of the validation outcome above).
             if source in _consecutive_failures:
                 prev = _consecutive_failures.pop(source)
                 if prev >= config.alert_after_failures:
@@ -153,10 +131,8 @@ async def _scrape_with_retry(detector) -> list[dict]:
 
 # ── Main scrape function ──────────────────────────────────────────────────────
 
+# Runs every detector, validates results, and inserts new jobs into MongoDB.
 async def run_scrape():
-    """
-    Run all detectors, validate results, and insert new jobs into MongoDB.
-    """
     collection = jobs_collection()
 
     # Ensure unique index exists — idempotent, cheap if already created
@@ -202,11 +178,8 @@ async def run_scrape():
                     and existing.get("retries", 0) >= EXHAUSTED_RETRIES
                 ):
                     # Permanently failed and abandoned by the downloader/
-                    # transcriber's own retry logic — give it a fresh start
-                    # instead of leaving it stuck forever. Reset everything
-                    # a prior attempt could have left behind; file_paths in
-                    # particular must be cleared since the underlying file
-                    # was already deleted when the job gave up.
+                    # transcriber — give it a fresh start instead of leaving
+                    # it stuck; file_paths is cleared since that file is gone.
                     await collection.update_one(
                         {"_id": existing["_id"]},
                         {"$set": {

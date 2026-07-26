@@ -1,17 +1,7 @@
-"""Entry point — run this to start the pipeline: `python main.py` (or `run.bat`).
-
-Starts the scraper, downloader, and transcriber as three independent loops
-running concurrently in one process. Each loop catches its own errors so one
-stage crashing doesn't take down the others, and each writes a heartbeat to
-Mongo every cycle so the API's /health endpoint can report on this process's
-liveness even though it's a separate process from the API. The whole thing
-runs under a restart-with-backoff wrapper so an unhandled crash (anything
-that gets past the loops' own try/excepts) doesn't leave the process dead
-until someone notices and restarts it by hand.
-
-This does NOT start the REST API — that's a separate process, started with:
-    uvicorn api.main:app --reload
-"""
+# Entry point (`python main.py` or run.bat): runs the scraper, downloader,
+# and transcriber as 3 independent loops in one process, each heartbeating
+# to Mongo so /health can report liveness. The REST API is separate —
+# start it with `uvicorn api.main:app`.
 
 import asyncio
 import time
@@ -29,8 +19,8 @@ DOWNLOADER_INTERVAL_SECONDS = 30
 TRANSCRIBER_INTERVAL_SECONDS = 30
 
 
+# Runs every SCRAPE_INTERVAL_SECONDS — checks the portals for new videos.
 async def scraper_loop():
-    """Runs every SCRAPE_INTERVAL_SECONDS — checks the portals for new videos."""
     while True:
         ok = True
         try:
@@ -38,17 +28,15 @@ async def scraper_loop():
         except Exception as e:
             logger.error(f"[scraper_loop] Error: {e}")
             ok = False
-        # Heartbeat unconditionally (success or not) — it reports "this
-        # loop is still alive and cycling," not "the last cycle succeeded."
-        # A loop that's erroring every cycle but still retrying should
-        # show as alive, not dead; `ok` carries the success/failure detail
-        # separately for /health to surface.
+        # Heartbeat runs whether or not the cycle succeeded — it means
+        # "this loop is alive," not "the last cycle worked." `ok` carries
+        # success/failure separately for /health to surface.
         await heartbeat("scraper_loop", {"ok": ok, "interval_seconds": SCRAPE_INTERVAL_SECONDS})
         await asyncio.sleep(SCRAPE_INTERVAL_SECONDS)
 
 
+# Runs every 30s — downloads audio/captions for pending jobs.
 async def downloader_loop():
-    """Runs every 30s — downloads audio/captions for pending jobs."""
     while True:
         ok = True
         try:
@@ -60,8 +48,8 @@ async def downloader_loop():
         await asyncio.sleep(DOWNLOADER_INTERVAL_SECONDS)
 
 
+# Runs every 30s — transcribes downloaded jobs.
 async def transcriber_loop():
-    """Runs every 30s — transcribes downloaded jobs."""
     while True:
         ok = True
         try:
@@ -87,23 +75,11 @@ async def main():
     )
 
 
+# Restarts main() with exponential backoff if it ever exits from an
+# unhandled crash, instead of leaving the process dead until someone
+# notices. Backoff resets after a stable run so one early crash doesn't
+# slow down every future restart.
 def run_forever():
-    """Keep the pipeline alive across unhandled crashes.
-
-    main() should only ever exit if something propagates past all three
-    loops' own try/excepts — an actual bug, an OOM, a corrupted event
-    loop, etc. Rather than letting the whole process die and stay dead
-    until a human notices, this catches that, logs it, waits with
-    exponential backoff, and starts over. asyncio.run() tears down and
-    rebuilds the event loop each call, and shared.db.database already
-    reconnects cleanly whenever the running loop changes (see
-    get_client()'s loop-tracking guard), so a fresh run() is a clean
-    restart rather than a half-broken one.
-
-    Backoff resets after a reasonably long stable run, so one old crash
-    early on doesn't leave every future restart waiting the full 5
-    minutes even after the system's been fine for hours.
-    """
     backoff = 5
     max_backoff = 300
 

@@ -8,9 +8,8 @@ from shared.logging_config import get_logger
 
 logger = get_logger(__name__)
 
-# The House site has certificate problems; ignore the related warnings to
-# avoid noisy logs. The HTTP strategy explicitly disables verification when
-# communicating with this host.
+# The House site has cert problems; the HTTP strategy disables verification
+# for this host, so silence the resulting warnings here too.
 warnings.filterwarnings("ignore", message="Unverified HTTPS request")
 
 BASE_URL = "https://house.mi.gov"
@@ -32,14 +31,8 @@ class HousePortalDetector(HTTPDetector):
     def source_name(self) -> str:
         return self.SOURCE_NAME
 
+    # Scrapes the public video archive page and returns unique video records.
     async def get_new_videos(self) -> list[dict]:
-        """Scrape the public video archive page and return unique video records.
-
-        The detector parses HTML listings for video links, extracts filenames
-        used to build download URLs, and normalizes metadata. Deduplication is
-        reset per-run so repeats across runs are handled by the jobs collection
-        uniqueness.
-        """
         self._dedup = DeduplicationTracker()  # Reset deduplication tracker for each scrape
         videos = []
         client = await self.get_client()
@@ -73,16 +66,9 @@ class HousePortalDetector(HTTPDetector):
                 date_text = item["date_text"]
                 download_url = f"{DOWNLOAD_BASE}/{filename}"
 
-                # item={} is deliberate, not a stub left unfinished: the House
-                # archive page (unlike the Senate's JSON API) never exposes
-                # duration or file size anywhere in its HTML — there's no
-                # field to read them from. That means duration_secs comes
-                # back as None for every House job (see extract_duration()
-                # in metadata_utils.py), and should_transcribe() in
-                # transcriber.py already special-cases None so House videos
-                # aren't silently excluded by the duration-too-short rule.
-                # A real fix would require a second request per video to a
-                # detail page, if one exists — not attempted here.
+                # item={} is deliberate: House's HTML never exposes duration/
+                # size, so duration_secs comes back None (should_transcribe()
+                # in transcriber.py already treats that as "don't exclude").
                 metadata = MetadataExtractor.normalize_portal_metadata(
                     item={},
                     source_name=self.SOURCE_NAME,

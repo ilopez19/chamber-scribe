@@ -7,12 +7,9 @@ from shared.logging_config import get_logger
 logger = get_logger(__name__)
 
 
+# Downloads HLS streams via FFmpeg with -vn (audio only) — much smaller
+# and faster than pulling the full video.
 class HLSDownloadStrategy(BaseDownloadStrategy):
-    """
-    Downloads HLS streams using FFmpeg.
-    Uses -vn flag to extract audio only — ignores video entirely.
-    Much faster and smaller than downloading full video.
-    """
 
     async def download(self, url: str, destination: str) -> bool:
         os.makedirs(os.path.dirname(destination), exist_ok=True)
@@ -22,10 +19,8 @@ class HLSDownloadStrategy(BaseDownloadStrategy):
 
         command = [
             "ffmpeg",
-            # CloudFront returns 403 for ffmpeg's default User-Agent
-            # ("Lavf/...") on this distribution — pretending to be a
-            # browser gets past whatever's checking it (WAF rule or
-            # CloudFront Function, most likely).
+            # CloudFront returns 403 for ffmpeg's default User-Agent on this
+            # distribution — a browser UA gets past whatever blocks it.
             "-user_agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
             "-i", url,
             "-vn",                      # no video — audio only
@@ -46,14 +41,9 @@ class HLSDownloadStrategy(BaseDownloadStrategy):
             )
 
             try:
-                # Without a timeout, a stalled network read (dead
-                # connection, a manifest that never finishes, a URL that no
-                # longer serves valid HLS) leaves ffmpeg running forever —
-                # and since nothing else races this await, the whole
-                # downloader_loop cycle (and therefore its heartbeat) hangs
-                # with it. This is exactly what a stuck-looking
-                # downloader_loop in /health with a growing
-                # seconds_since_last_heartbeat usually means.
+                # Without a timeout a stalled read leaves ffmpeg running
+                # forever, hanging the whole downloader_loop cycle (and its
+                # heartbeat) along with it.
                 stdout, stderr = await asyncio.wait_for(
                     process.communicate(), timeout=DOWNLOAD_TIMEOUT
                 )
@@ -61,24 +51,21 @@ class HLSDownloadStrategy(BaseDownloadStrategy):
                 logger.error(f"[hls] ❌ FFmpeg timed out after {DOWNLOAD_TIMEOUT}s — killing: {url}")
                 process.kill()
                 await process.wait()
-                self._cleanup_partial(destination)
+                self._remove_partial_file(destination)
                 return False
 
             if process.returncode == 0:
+                # Decimal MB (1e6), not binary MiB (2**20) — matches every
+                # other size calc in this codebase.
                 size_mb = round(os.path.getsize(destination) / 1_000_000, 1)
                 logger.info(f"[hls] ✅ Audio extracted: {destination} ({size_mb}MB)")
                 return True
             else:
                 error = stderr.decode()[-500:]
                 logger.error(f"[hls] ❌ FFmpeg failed: {error}")
-                # A non-zero exit can still leave a partial/corrupt file on
-                # disk (ffmpeg writes output incrementally before failing).
-                # Without removing it, the downloader's "skip if destination
-                # already exists" check (downloader.py's _download_job)
-                # would treat this failed attempt as a completed download
-                # forever, and Whisper would silently transcribe a
-                # truncated file instead of the job ever being retried.
-                self._cleanup_partial(destination)
+                # A failed run can leave a partial file that the downloader's
+                # "already on disk" check would treat as complete forever.
+                self._remove_partial_file(destination)
                 return False
 
         except FileNotFoundError:
@@ -89,11 +76,11 @@ class HLSDownloadStrategy(BaseDownloadStrategy):
             if process is not None and process.returncode is None:
                 process.kill()
                 await process.wait()
-            self._cleanup_partial(destination)
+            self._remove_partial_file(destination)
             return False
 
     @staticmethod
-    def _cleanup_partial(destination: str) -> None:
+    def _remove_partial_file(destination: str) -> None:
         if os.path.exists(destination):
             try:
                 os.remove(destination)

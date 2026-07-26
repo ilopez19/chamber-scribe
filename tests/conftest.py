@@ -1,26 +1,12 @@
-"""Shared pytest setup.
-
-These tests exercise business logic (should_transcribe, VTT parsing,
-download rules, dedup, portal validation, atomic job claiming), not real
-database/GPU/model behavior. Two things need to be true before any
-application module gets imported, so this happens in conftest.py, which
-pytest loads before collecting test files:
-
-1. shared/config.py reads MONGO_URI/MONGO_DB_NAME/SCRAPE_INTERVAL_SECONDS
-   from the environment at import time with no defaults (intentional —
-   fail fast in real deployments rather than silently using the wrong
-   database). Tests aren't a real deployment, so safe defaults are set
-   here if they're not already present.
-
-2. services/transcriber/config.py imports torch at module level to check
-   torch.cuda.is_available(), and the whisper engine imports
-   faster-whisper. Both are legitimate runtime dependencies (installed by
-   install.ps1) but are multi-GB and GPU-related — a unit test suite
-   shouldn't need either just to test a pure function like
-   should_transcribe(). Stubbing them in sys.modules before they're
-   imported lets the real transcriber module chain import successfully
-   without either package actually being installed.
-"""
+# Shared pytest setup. These tests exercise business logic, not real
+# database/GPU/model behavior, so two things are stubbed here before any
+# application module gets imported (pytest loads this before collecting tests).
+#
+# 1. shared/config.py reads Mongo env vars with no defaults (fail-fast in
+#    real deployments) — safe test defaults are set here instead.
+# 2. transcriber/config.py imports torch/faster-whisper at module level;
+#    both are multi-GB GPU deps a unit test suite shouldn't need, so
+#    they're stubbed in sys.modules before anything imports them for real.
 
 import os
 import sys

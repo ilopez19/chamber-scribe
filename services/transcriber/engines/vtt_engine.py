@@ -1,30 +1,15 @@
-"""
-VTT transcription engine.
-
-Parses a WebVTT caption file into the same transcript format
-that WhisperEngine produces. This lets the transcriber treat
-VTT and Whisper output identically downstream.
-
-For captioned Senate videos this replaces Whisper entirely —
-near-instant vs minutes of GPU time.
-"""
+# Parses a WebVTT caption file into the same transcript format WhisperEngine
+# produces, so the transcriber treats VTT and Whisper output identically —
+# for captioned Senate videos this replaces Whisper entirely.
 
 import re
 from services.transcriber.engines.base import BaseTranscriptionEngine
 
 
+# Converts a VTT timestamp (H:MM:SS.mmm, HH:MM:SS.mmm, or MM:SS.mmm) to seconds.
 def _parse_timestamp(ts: str) -> float:
-    """
-    Convert a VTT timestamp to seconds.
-
-    Handles all common formats:
-      0:00:01.400     (H:MM:SS.mmm)
-      00:00:01.400    (HH:MM:SS.mmm)
-      00:01.400       (MM:SS.mmm)
-    """
     try:
         ts = ts.strip()
-        # Split off milliseconds first
         if "." in ts:
             time_part, ms_part = ts.rsplit(".", 1)
             ms = float("0." + ms_part)
@@ -46,13 +31,9 @@ def _parse_timestamp(ts: str) -> float:
     except Exception:
         return 0.0
 
+# Parses a .vtt file into segment dicts matching faster-whisper's output
+# format: {"start": float, "end": float, "text": str}.
 def parse_vtt(vtt_path: str) -> list[dict]:
-    """
-    Parse a .vtt file into a list of segment dicts.
-
-    Each segment matches the faster-whisper output format:
-        {"start": float, "end": float, "text": str}
-    """
     segments = []
 
     with open(vtt_path, "r", encoding="utf-8") as f:
@@ -101,9 +82,6 @@ def parse_vtt(vtt_path: str) -> list[dict]:
         if not text:
             continue
 
-        # Convert timestamps to seconds using the helper and round for
-        # consistency with Whisper segments. Using a helper centralizes
-        # parsing logic for different timestamp formats.
         start = _parse_timestamp(start_str)
         end = _parse_timestamp(end_str)
 
@@ -116,22 +94,13 @@ def parse_vtt(vtt_path: str) -> list[dict]:
     return segments
 
 
+# Reads from a pre-existing VTT caption file instead of running Whisper;
+# used for Senate videos where captioned=True.
 class VTTEngine(BaseTranscriptionEngine):
-    """
-    Transcription engine that reads from a pre-existing VTT caption file
-    instead of running Whisper.
 
-    Used for Senate videos where captioned=True — the VTT is already
-    downloaded by the downloader as part of the DownloadPlan.
-    """
-
+    # vtt_path is the actual path from the job's file_paths — captioned
+    # Senate jobs only ever download a .vtt, never derived from a filename.
     async def transcribe(self, vtt_path: str) -> dict:
-        """
-        vtt_path is the actual path to the .vtt caption file, as recorded
-        in the job's file_paths — captioned Senate jobs only ever download
-        a .vtt (no .mp3), so this is never derived/guessed from a naming
-        convention, just used directly.
-        """
         import os
 
         if not vtt_path or not os.path.exists(vtt_path):

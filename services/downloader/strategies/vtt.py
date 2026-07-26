@@ -7,11 +7,8 @@ from shared.logging_config import get_logger
 logger = get_logger(__name__)
 
 
+# Downloads a WebVTT caption file directly — plain text, kilobytes in size.
 class VTTDownloadStrategy(BaseDownloadStrategy):
-    """
-    Downloads a WebVTT caption file directly.
-    These are plain text files — very fast, kilobytes in size.
-    """
 
     async def download(self, url: str, destination: str) -> bool:
         os.makedirs(os.path.dirname(destination), exist_ok=True)
@@ -24,6 +21,8 @@ class VTTDownloadStrategy(BaseDownloadStrategy):
                 with open(destination, "w", encoding="utf-8") as f:
                     f.write(response.text)
 
+                # Decimal KB (1e3), not binary KiB (2**10) — same convention
+                # as every other size calc in this codebase.
                 size_kb = round(os.path.getsize(destination) / 1_000, 1)
                 logger.info(f"[vtt] ✅ Downloaded: {destination} ({size_kb}KB)")
                 return True

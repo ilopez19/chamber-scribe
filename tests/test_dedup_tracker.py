@@ -1,8 +1,6 @@
-"""Tests for DeduplicationTracker (services/scraper/filter_utils.py) — the
-one thing preventing a video that appears in multiple portal tabs (e.g.
-Senate's home/live/recent/playlists/featured/popular) from being counted
-and queued more than once in a single scrape run.
-"""
+# Tests for DeduplicationTracker — prevents a video appearing in multiple
+# portal tabs (e.g. Senate's home/live/recent/playlists) from being
+# counted or queued more than once in a single scrape run.
 
 from services.scraper.filter_utils import DeduplicationTracker
 

@@ -1,9 +1,6 @@
-"""Tests for the VTT caption parser (services/transcriber/engines/vtt_engine.py).
-
-This is the fast path for every captioned Senate video, so a parsing bug
-here silently produces wrong or empty transcripts rather than a loud
-failure — worth locking down with real tests.
-"""
+# Tests for the VTT caption parser — the fast path for every captioned
+# Senate video, so a parsing bug here would silently produce wrong or
+# empty transcripts rather than a loud failure.
 
 import pytest
 
@@ -29,8 +26,7 @@ class TestParseTimestamp:
 
     def test_garbage_input_returns_zero_instead_of_raising(self):
         # A malformed caption file shouldn't crash the whole transcription —
-        # this is the one behavior the try/except in _parse_timestamp exists
-        # to guarantee.
+        # this is the one behavior the try/except in _parse_timestamp guarantees.
         assert _parse_timestamp("not-a-timestamp") == 0.0
 
 

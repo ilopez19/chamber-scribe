@@ -1,3 +1,5 @@
+# Docker requires this file at the build context root (repo root), not
+# next to docker/Dockerfile — see docker/Dockerfile's header comment.
 venv/
 __pycache__/
 *.pyc
@@ -7,5 +9,7 @@ storage/
 .git/
 .gitignore
 *.md
-design.svg
+images/design.svg
 tests/
+k8s/
+.github/

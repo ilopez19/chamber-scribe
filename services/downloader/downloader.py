@@ -8,12 +8,9 @@
 #   Next stage:   services/transcriber/transcriber.py
 #   Diagram:      design.svg
 # ═══════════════════════════════════════════════════════════════════════
-"""Downloader service orchestration.
-
-This module queries pending jobs, builds download plans using business
-rules, and executes downloads using strategy implementations (HLS, HTTP,
-VTT). It includes retry semantics and batching to limit resource usage.
-"""
+# Queries pending jobs, builds a download plan from business rules
+# (rules.py), and executes it via strategy implementations (HLS, VTT,
+# HTTP audio extract).
 
 import asyncio
 import os
@@ -25,7 +22,6 @@ from shared.db.models.job import JobStatus
 from services.downloader.config import BATCH_SIZE
 from services.downloader.rules import DownloadRules
 from services.downloader.strategies.hls import HLSDownloadStrategy
-from services.downloader.strategies.http import HTTPDownloadStrategy
 from services.downloader.strategies.http_audio import HTTPAudioExtractStrategy
 from services.downloader.strategies.vtt import VTTDownloadStrategy
 from shared.logging_config import get_logger
@@ -35,47 +31,33 @@ logger = get_logger(__name__)
 MAX_RETRIES = JOB_MAX_RETRIES
 
 
+# Returns the strategy instance for strategy_name; http_audio_extract
+# disables SSL verification for known-bad-cert sources (e.g. House).
 def _get_strategy(strategy_name: str, job: dict):
-    """Return the correct strategy instance for a given strategy name.
-
-    The HTTP strategy selectively disables SSL verification for known
-    problematic sources (e.g. Michigan House) where the remote site has
-    certificate issues. This is a pragmatic choice to allow scraping despite
-    external infra problems.
-    """
     source = job.get("source", "")
 
     if strategy_name == "hls":
         return HLSDownloadStrategy()
     elif strategy_name == "vtt":
         return VTTDownloadStrategy()
-    elif strategy_name == "http_audio":
-        # Disables SSL verification only for the specific source with bad certs
-        verify_ssl = source != "michigan_house"
-        return HTTPDownloadStrategy(verify_ssl=verify_ssl)
     elif strategy_name == "http_audio_extract":
-        # Disables SSL verification only for the specific source with bad certs
         verify_ssl = source != "michigan_house"
         return HTTPAudioExtractStrategy(verify_ssl=verify_ssl)
     else:
         raise ValueError(f"Unknown strategy: {strategy_name}")
 
 
+# Applies a MongoDB update and stamps updated_at consistently.
 async def _update_job(collection, job_id, update: dict):
-    """Apply a MongoDB update and stamp updated_at consistently."""
     await collection.update_one(
         {"_id": job_id},
         {"$set": {**update, "updated_at": datetime.now(timezone.utc)}},
     )
 
 
+# Runs the download plan for one job and updates its status; skips
+# files already on disk so retries are idempotent.
 async def _download_job(job: dict, collection) -> None:
-    """Execute the download plan for a single job and update status.
-
-    Behavior notes:
-    - Skips downloads already present on disk to support idempotent retries.
-    - Collects completed file paths for storage on the job document.
-    """
     job_id = job["_id"]
     title = job.get("metadata", {}).get("title", str(job_id))
     captioned = job.get("metadata", {}).get("captioned", False)
@@ -86,16 +68,12 @@ async def _download_job(job: dict, collection) -> None:
     if retries > 0:
         logger.warning(f"[downloader] Retry attempt {retries + 1}/{MAX_RETRIES}")
 
-    # Build download plan from business rules
     plan = DownloadRules.build_plan(job)
 
     if plan.is_empty():
-        # An empty plan means DownloadRules deliberately decided not to
-        # download this job (unknown source, or a business-rule skip like
-        # rules.py's live-channel exclusion) — not a failed attempt, so it
-        # gets its own status rather than FAILED. Unlike FAILED, EXCLUDED
-        # jobs are never reset to pending by the scraper's re-queue logic,
-        # since the reason for excluding them won't change on rediscovery.
+        # An empty plan means rules.py deliberately skipped this job
+        # (unknown source, or a business rule like the live-channel
+        # exclusion) — not a failure, so it's EXCLUDED, not FAILED.
         logger.info(f"[downloader] No download plan for: {title} — excluding")
         await _update_job(collection, job_id, {
             "status": JobStatus.EXCLUDED,
@@ -104,9 +82,8 @@ async def _download_job(job: dict, collection) -> None:
         })
         return
 
-    # No separate "mark as downloading" update here — claim_jobs() already
-    # transitioned this job to DOWNLOADING atomically as part of picking
-    # it up, in run_downloads() below.
+    # No separate "mark as downloading" update — claim_jobs() already
+    # did that atomically in run_downloads() below.
     completed = []
     failed = []
 
@@ -115,7 +92,6 @@ async def _download_job(job: dict, collection) -> None:
         destination = item["destination"]
         strategy_name = item["strategy"]
 
-        # Skip if already on disk — supports retrying without re-downloading
         if os.path.exists(destination):
             logger.info(f"[downloader] Already on disk: {destination}")
             completed.append(destination)
@@ -129,7 +105,6 @@ async def _download_job(job: dict, collection) -> None:
         else:
             failed.append(url)
 
-    # Update job based on results
     if failed:
         new_retries = retries + 1
         logger.warning(f"[downloader] {len(failed)} download(s) failed: {title}")
@@ -153,42 +128,22 @@ async def _download_job(job: dict, collection) -> None:
         })
 
 
+# Claims pending/retryable jobs atomically and downloads them in
+# batches, so a crash mid-download or a second process running
+# alongside this one can't both grab the same job.
 async def run_downloads() -> None:
-    """Main entry point: claim pending/retryable jobs and run downloads in
-    batches.
-
-    Batching prevents overloading local resources when many jobs queue up.
-    Jobs are claimed atomically (see claim_jobs) before any work starts,
-    so this is safe to call even if a previous call is still finishing or
-    a second instance of this process is running — neither can end up
-    processing the same job as this one.
-    """
     collection = jobs_collection()
 
-    # Claiming transitions each matched job straight to DOWNLOADING as
-    # part of the same atomic operation that finds it — that's the fix
-    # for the race a separate find()-then-update leaves open. retries==0
-    # distinguishes a fresh PENDING job from a FAILED-and-retrying one for
-    # the log line below, since both now share the same DOWNLOADING status.
-    #
-    # Also re-claims jobs already sitting in DOWNLOADING: if this process
-    # was killed (crash, container restart, `windows\stop.ps1` /
-    # `macos-linux/stop.sh`) mid-download,
-    # nothing else ever moves that job out of DOWNLOADING, so without this
-    # it would stay stuck forever instead of being picked back up under a
-    # fresh claim_id next cycle. Mirrors how run_transcriptions() re-claims
-    # stuck PROCESSING jobs below.
+    # Also re-claims jobs stuck in DOWNLOADING from a process that died
+    # mid-download — otherwise nothing ever moves them out of that status.
     claimed = await claim_jobs(
         collection,
         query={
             "$or": [
-                # Fresh jobs ready to download
-                {"status": JobStatus.PENDING},
-                # Stuck from a previous run that died mid-download
-                {"status": JobStatus.DOWNLOADING},
-                # Download failures under the retry limit
+                {"status": JobStatus.PENDING},       # Fresh jobs
+                {"status": JobStatus.DOWNLOADING},   # Stuck from a prior crash
                 {
-                    "status": JobStatus.FAILED,
+                    "status": JobStatus.FAILED,       # Retryable failures
                     "failed_stage": "download",
                     "retries": {"$lt": MAX_RETRIES},
                 },
@@ -206,7 +161,6 @@ async def run_downloads() -> None:
 
     logger.info(f"[downloader] {len(pending)} pending, {len(retrying)} retrying — batch size: {BATCH_SIZE}")
 
-    # Process pending first, then retries
     all_jobs = pending + retrying
     batches = [
         all_jobs[i: i + BATCH_SIZE]

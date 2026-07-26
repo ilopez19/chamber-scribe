@@ -1,23 +1,15 @@
-"""
-Shared HTTP utilities for detectors.
-
-Provides:
-- Consistent HTTP client configuration
-- Retry logic with exponential backoff
-- Common request patterns
-"""
+# Shared HTTP client config + retry-with-backoff logic used by detectors.
 
 import asyncio
 import httpx
-from typing import Optional
 from services.scraper.config import HTTP_TIMEOUT, HTTP_VERIFY, MAX_RETRIES, RETRY_DELAY
 from shared.logging_config import get_logger
 
 logger = get_logger(__name__)
 
 
+# Manages shared HTTP client with consistent configuration.
 class HTTPClient:
-    """Manages shared HTTP client with consistent configuration."""
 
     @staticmethod
     def create_client(
@@ -25,20 +17,12 @@ class HTTPClient:
         verify: bool = HTTP_VERIFY,
         **kwargs
     ) -> httpx.AsyncClient:
-        """
-        Create a configured AsyncClient.
-
-        Args:
-            timeout: Request timeout in seconds
-            verify: Enable/disable SSL verification
-            **kwargs: Additional httpx.AsyncClient arguments
-
-        Returns:
-            Configured AsyncClient instance
-        """
         return httpx.AsyncClient(timeout=timeout, verify=verify, **kwargs)
 
 
+# Fetches url with exponential backoff. max_retries is retries AFTER the
+# initial attempt (total attempts = max_retries + 1); always returns a
+# real Response or raises — never returns None.
 async def fetch_with_retry(
     client: httpx.AsyncClient,
     url: str,
@@ -46,25 +30,7 @@ async def fetch_with_retry(
     retry_delay: float = RETRY_DELAY,
     method: str = "GET",
     **kwargs
-) -> Optional[httpx.Response]:
-    """
-    Fetch URL with exponential backoff retry logic.
-
-    Args:
-        client: AsyncClient to use
-        url: URL to fetch
-        max_retries: Number of retry attempts
-        retry_delay: Initial delay between retries (doubles each attempt)
-        method: HTTP method to use (default GET) — e.g. the Senate portal's
-            API requires POST with a JSON body, not a GET with query params.
-        **kwargs: Additional arguments for client.request() (json=, headers=, params=, etc.)
-
-    Returns:
-        Response object or None if all retries failed
-
-    Raises:
-        httpx.HTTPStatusError: If response status indicates error (after retries exhausted)
-    """
+) -> httpx.Response:
     delay = retry_delay
     for attempt in range(max_retries + 1):
         try:
@@ -77,6 +43,3 @@ async def fetch_with_retry(
             logger.warning(f"[http_utils] Retry {attempt + 1}/{max_retries} after {delay}s: {url} — {e}")
             await asyncio.sleep(delay)
             delay *= 2  # Exponential backoff
-
-    return None
-

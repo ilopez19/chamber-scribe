@@ -1,9 +1,6 @@
-"""Tests for DownloadRules.build_plan() (services/downloader/rules.py) —
-the single place that decides HOW (or whether) a job gets downloaded.
-Covers both the normal Senate/House cases and the live-channel exclusion
-that was added after discovering "Live Stream N" / untitled entries are
-per-channel slots with no stable recording, not real one-time videos.
-"""
+# Tests for DownloadRules.build_plan() — the single place that decides
+# HOW (or whether) a job gets downloaded, including the live-channel
+# exclusion for "Live Stream N" / untitled entries that have no stable recording.
 
 from services.downloader.rules import DownloadRules
 

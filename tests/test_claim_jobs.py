@@ -1,14 +1,7 @@
-"""Tests for claim_jobs() (shared/db/database.py) — the atomic job-claiming
-helper that makes it safe to invoke the downloader/transcriber's job
-pickup step concurrently (two overlapping loop iterations, or two
-instances of the process). This is the fix for a real gap: the previous
-find()-then-later-update pattern left a window where two callers could
-both see the same job as unclaimed and both start processing it.
-
-Uses a minimal in-memory stand-in for a Mongo collection rather than a
-real database, so this suite runs anywhere without a MongoDB instance —
-it's testing claim_jobs()'s logic, not the database driver.
-"""
+# Tests for claim_jobs() — the atomic job-claiming helper that makes it
+# safe to run the downloader/transcriber pickup step concurrently. Uses an
+# in-memory fake collection instead of a real database, since this tests
+# claim_jobs()'s logic, not the Mongo driver.
 
 import asyncio
 
@@ -46,21 +39,17 @@ class FakeCursor:
         return list(self._docs)
 
 
+# Just enough of a pymongo collection to exercise claim_jobs()'s
+# query/update semantics, including the atomicity guarantee update_many gives.
 class FakeCollection:
-    """Just enough of a pymongo AsyncMongoClient collection to exercise
-    claim_jobs()'s query/update semantics, including the atomicity
-    guarantee update_many gives per document.
-    """
 
     def __init__(self, docs):
         self._docs = {d["_id"]: dict(d) for d in docs}
         self._lock = asyncio.Lock()
 
     async def update_many(self, query, update):
-        # A real MongoDB update_many applies each matched document's
-        # update atomically as part of one server-side operation — the
-        # lock simulates that so two concurrent callers can't interleave
-        # their match-then-apply steps against the same document.
+        # The lock simulates Mongo's per-document atomicity so two
+        # concurrent callers can't interleave match-then-apply on the same doc.
         async with self._lock:
             matched = [d for d in self._docs.values() if _matches(d, query)]
             for doc in matched:
@@ -93,9 +82,8 @@ async def test_claim_jobs_tags_claimed_documents_with_a_unique_claim_id():
 
 @pytest.mark.asyncio
 async def test_two_concurrent_claims_never_claim_the_same_job():
-    # The actual regression this exists to catch: two overlapping callers
-    # (two loop iterations, or two process instances) both racing to pick
-    # up the same batch of pending jobs.
+    # The actual regression this guards: two overlapping callers racing to
+    # pick up the same batch of pending jobs.
     docs = [{"_id": i, "status": "pending"} for i in range(20)]
     col = FakeCollection(docs)
 

@@ -10,4 +10,3 @@ faster-whisper==1.2.1
 # by install.ps1, which picks a CPU or CUDA build depending on the machine.
 # Keeping it out of this atomic `pip install -r requirements.txt` means a
 # stale/unavailable torch pin can't take the other 8 packages down with it.
-odmantic

@@ -1,10 +1,6 @@
-"""Sanity checks on the job status enum (shared/db/models/job.py).
-
-Trivial on their own, but they exist to catch a real class of mistake:
-accidentally renaming/removing a status string that other code (or a
-Mongo query written as a raw string like {"status": "excluded"} in
-db_utils.py/api routes) depends on matching exactly.
-"""
+# Sanity checks on the job status enum. Trivial on their own, but they
+# catch accidentally renaming/removing a status string that other code
+# (raw Mongo queries, API routes) depends on matching exactly.
 
 from shared.db.models.job import JobStatus, new_video_job
 
@@ -31,8 +27,8 @@ def test_new_video_job_defaults_to_pending():
 
 
 def test_new_video_job_does_not_share_mutable_default_metadata():
-    # Regression guard for the classic Python footgun: metadata=None must
-    # not resolve to a single dict shared across every job.
+    # Regression guard: metadata=None must not resolve to a single dict
+    # shared across every job.
     job_a = new_video_job(video_url="a", source="s")
     job_b = new_video_job(video_url="b", source="s")
     job_a["metadata"]["title"] = "A"

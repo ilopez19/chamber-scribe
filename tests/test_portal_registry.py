@@ -1,10 +1,5 @@
-"""Tests for validate_videos() (services/scraper/portal_registry.py).
-
-Note: validate_videos() is a diagnostic check, not a gate — scraper.py
-only alerts on a validation failure now, it never discards the videos
-(see scraper.py's _scrape_with_retry docstring). These tests cover the
-validation logic in isolation.
-"""
+# Tests for validate_videos() — a diagnostic check, not a gate; scraper.py
+# only alerts on a validation failure, it never discards the videos.
 
 from datetime import datetime
 
@@ -58,8 +53,7 @@ def test_meets_minimum_count_passes():
 def test_seasonal_override_lowers_the_bar_for_the_current_month():
     current_month = datetime.now().strftime("%B").lower()
     config = _config(min_videos_expected=100, seasonal_min_videos={current_month: 0})
-    # Without the seasonal override, 1 video would fail against a minimum
-    # of 100 — the override should make this pass instead.
+    # Without the override, 1 video would fail against a minimum of 100.
     is_valid, _ = validate_videos([_video()], config)
     assert is_valid is True
 

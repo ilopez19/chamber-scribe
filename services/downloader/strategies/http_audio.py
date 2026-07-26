@@ -7,24 +7,13 @@ from shared.logging_config import get_logger
 logger = get_logger(__name__)
 
 
+# Extracts audio directly from a progressive HTTP(S) video URL via FFmpeg;
+# the video is never written to disk, only the mono 16kHz audio track.
+# Replaces an earlier approach that raw-downloaded House's full multi-GB video.
 class HTTPAudioExtractStrategy(BaseDownloadStrategy):
-    """
-    Extracts audio directly from a progressive HTTP(S) video URL using
-    FFmpeg — the video itself is never downloaded or written to disk, only
-    the extracted mono 16kHz audio track.
 
-    This replaces raw-downloading the full video (previously done by
-    HTTPDownloadStrategy for House, which saved the entire multi-GB 1080p60
-    file under a misleading .mp3 extension). FFmpeg can pull from a plain
-    HTTPS URL the same way HLSDownloadStrategy pulls from an .m3u8 manifest,
-    so this is that same pattern pointed at a different kind of source.
-    """
-
-    def __init__(self, verify_ssl: bool = True):
-        # House serves video over HTTPS with a broken cert chain; skip
-        # verification only for sources known to have this problem (mirrors
-        # HTTPDownloadStrategy's verify_ssl handling in downloader.py).
-        self._verify_ssl = verify_ssl
+    # __init__(verify_ssl) is inherited from BaseDownloadStrategy — sets
+    # self._verify, used below to skip cert checking for House's broken TLS.
 
     async def download(self, url: str, destination: str) -> bool:
         os.makedirs(os.path.dirname(destination), exist_ok=True)
@@ -33,7 +22,7 @@ class HTTPAudioExtractStrategy(BaseDownloadStrategy):
         logger.info(f"[http_audio] Saving to: {destination}")
 
         command = ["ffmpeg"]
-        if not self._verify_ssl:
+        if not self._verify:
             command += ["-tls_verify", "0"]
         command += [
             "-i", url,
@@ -55,11 +44,8 @@ class HTTPAudioExtractStrategy(BaseDownloadStrategy):
             )
 
             try:
-                # See hls.py's identical guard: without a timeout here, a
-                # stalled read from a flaky/slow House video URL leaves
-                # ffmpeg running forever, and since the downloader_loop only
-                # heartbeats after this whole call returns, the loop looks
-                # dead in /health even though the process is still alive.
+                # Same guard as hls.py: without a timeout a stalled read from
+                # a flaky House URL leaves ffmpeg running forever.
                 stdout, stderr = await asyncio.wait_for(
                     process.communicate(), timeout=DOWNLOAD_TIMEOUT
                 )
@@ -71,15 +57,16 @@ class HTTPAudioExtractStrategy(BaseDownloadStrategy):
                 return False
 
             if process.returncode == 0:
+                # Decimal MB (1e6), not binary MiB (2**20) — matches every
+                # other size calc in this codebase.
                 size_mb = round(os.path.getsize(destination) / 1_000_000, 1)
                 logger.info(f"[http_audio] ✅ Audio extracted: {destination} ({size_mb}MB)")
                 return True
             else:
                 error = stderr.decode()[-500:]
                 logger.error(f"[http_audio] ❌ FFmpeg failed: {error}")
-                # See hls.py: a failed run can still leave a partial file
-                # that the downloader's "already on disk" check would
-                # otherwise treat as a completed download forever.
+                # See hls.py: a failed run can leave a partial file the
+                # "already on disk" check would treat as complete forever.
                 self._cleanup_partial(destination)
                 return False
 
