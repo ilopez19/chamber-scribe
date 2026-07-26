@@ -6,15 +6,6 @@ from api.models.task import Task as TaskModel
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 
 
-def _serialize(task: dict) -> dict:
-    """Convert MongoDB document to JSON-safe dict without mutating input."""
-    doc = dict(task)
-    doc["id"] = str(doc.pop("_id"))
-    try:
-        # Validate/normalize via odmantic model (allows extra fields)
-        return TaskModel(**doc).dict()
-    except Exception:
-        return doc
 
 
 @router.get("/summary")
@@ -73,3 +64,13 @@ async def get_task(task_id: str):
         raise HTTPException(status_code=404, detail="Task not found")
 
     return _serialize(task)
+
+
+def _serialize(task: dict) -> dict:
+    """Convert MongoDB document to JSON-safe dict without mutating input."""
+    d = dict(task)
+    d["id"] = str(d.pop("_id"))
+    try:
+        return TaskModel(**d).dict()
+    except Exception:
+        return d
