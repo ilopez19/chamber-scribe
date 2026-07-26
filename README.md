@@ -6,7 +6,7 @@ Scrapes Michigan legislative hearing videos (Senate + House), downloads their au
 
 ## About me
 
-Hi there, I'm Isabel, most call me Izzy, welcome to my readME! As you go through the code, you'll see that I have a strong background in software development and a passion for creating efficient and scalable systems. I enjoy tackling complex problems and finding elegant solutions that make a real impact.
+Hi there, I'm Isabel, most call me Izzy, welcome to my README! As you go through the code, you'll see that I have a strong background in software development and a passion for creating efficient and scalable systems. I enjoy tackling complex problems and finding elegant solutions that make a real impact.
 Please don't hesitate to ask any question, excited to chat!
 
 - Email: [isabellopez0919@gmail.com](mailto:isabellopez0919@gmail.com)
@@ -141,8 +141,6 @@ macos-linux/               macOS/Linux setup/lifecycle scripts (bash) — same j
   start.sh
   stop.sh
   restart.sh
-
-.github/workflows/ci.yml   GitHub Actions: pytest on every push/PR
 
 pytest.ini                 Test config
 requirements-dev.txt       Adds pytest on top of requirements.txt
