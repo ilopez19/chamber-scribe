@@ -11,13 +11,13 @@ Please don't hesitate to ask any question, excited to chat!
 
 - Email: [isabellopez0919@gmail.com](mailto:isabellopez0919@gmail.com)
 - GitHub: [https://github.com/ilopez19](https://github.com/ilopez19)
-- LinkedIn: [https://www.linkedin.com/in/isabellopez0919](https://www.linkedin.com/in/isabellopez19/)
+- LinkedIn: [https://www.linkedin.com/in/isabellopez19](https://www.linkedin.com/in/isabellopez19/)
 
 ## How it works
 
 1. **Scraper** (`services/scraper/`) polls the Senate API and House HTML pages every `SCRAPE_INTERVAL_SECONDS` (default 3600s) and queues every video it finds into MongoDB — nothing gets filtered out here.
 2. **Downloader** (`services/downloader/`) picks up queued jobs every 30s and pulls audio only (never the full video) into `storage/audio/` — VTT captions straight from CloudFront for captioned videos, FFmpeg extraction for everything else.
-3. **Transcriber** (`services/transcriber/`) picks up downloaded jobs every 30s. `should_transcribe()` is the one place that decides if a job is actually worth processing (e.g no content to translate) — everything else gets transcribed: instantly if a VTT exists, otherwise via Whisper. The MP3 is deleted afterward either way.
+3. **Transcriber** (`services/transcriber/`) picks up downloaded jobs every 30s. `should_transcribe()` is the one place that decides if a job is actually worth processing (e.g no content to translate) — everything else gets transcribed: instantly if a VTT exists, otherwise via Whisper. The MP3 is deleted afterward either way. Each attempt is logged as its own task document (`GET /tasks`) — so a retry or a VTT-failure-then-Whisper-fallback shows up as a separate row tied to the same job, instead of overwriting one record.
 4. **Two ways a job can stop without a transcript**: `failed` means a genuine error (network failure, engine crash, missing file) — it's retried up to `JOB_MAX_RETRIES` times (default 3), then left failed and automatically re-queued from scratch next time the scraper rediscovers the video. `excluded` means a deliberate business-rule decision (too short, a live-channel entry with no stable recording) — not an error, not retried, and not re-queued on rediscovery, since the reason won't change. `failed` is the one worth checking; `excluded` is expected. `GET /jobs?status=failed` and `GET /jobs?status=excluded` list each — the `error` field on every returned job holds the specific reason.
 5. **REST API** (`api/`) exposes jobs, transcripts, and per-attempt task logs over HTTP. `GET /health` reports on the pipeline process too, not just the API — each pipeline loop writes a heartbeat to Mongo every cycle, and `/health` reads those, since the API and the pipeline are separate processes that never talk directly. Returns HTTP 503 (not just a JSON field) if any loop's heartbeat has gone stale, so container/orchestrator healthchecks actually catch it.
 6. **The pipeline runs under a restart-with-backoff wrapper** (`main.py`'s `run_forever()`) — if something gets past the individual loops' own error handling and crashes the whole process, it restarts automatically instead of staying down.
