@@ -1,12 +1,7 @@
-"""Reports whether the pipeline process (main.py) is actually alive.
-
-The API and the pipeline are two separate processes that never talk to
-each other directly — same as everywhere else in this system, this goes
-through Mongo instead. Each pipeline loop (scraper/downloader/transcriber)
-writes a heartbeat every cycle via shared.db.database.heartbeat(); if a
-loop's heartbeat is older than a few times its own interval, that loop
-(or the whole process) is down and hasn't recovered yet.
-"""
+# Reports whether the pipeline process (main.py) is actually alive. The
+# API and pipeline are separate processes that only talk through Mongo —
+# each loop writes a heartbeat every cycle via database.heartbeat(), and
+# a heartbeat older than a few times its own interval means that loop is down.
 
 from datetime import datetime, timezone
 from fastapi import APIRouter, Response
@@ -14,14 +9,18 @@ from shared.db.database import health_collection
 
 router = APIRouter(tags=["health"])
 
-# How much longer than a loop's own interval to allow before calling it
-# stale. Loops don't run instantly and Mongo writes have some latency, so
-# a small multiplier avoids false alarms right at the interval boundary.
-STALE_MULTIPLIER = 3
+# Grace-period multiplier above a loop's configured interval before it's
+# considered stale — e.g. a 30s interval with multiplier 3 tolerates up
+# to 90s without a heartbeat before flagging the loop as down.
+HEARTBEAT_GRACE_PERIOD_MULTIPLIER = 3
 DEFAULT_INTERVAL_SECONDS = 30
 
 
-@router.get("/health")
+# Reports whether the API and each pipeline loop are alive, based on Mongo
+# heartbeats; returns HTTP 503 (not just a JSON field) when anything is
+# stale, so status-code-only healthchecks (Docker, k8s) still catch it.
+# Returns e.g. {"status": "ok", "pipeline_loops": {"scraper_loop": {"healthy": true, ...}}}.
+@router.get("/health", summary="Pipeline + API health check")
 async def health(response: Response):
     docs = await health_collection().find({}).to_list(length=None)
     now = datetime.now(timezone.utc)
@@ -34,12 +33,12 @@ async def health(response: Response):
     for doc in docs:
         interval = doc.get("interval_seconds", DEFAULT_INTERVAL_SECONDS)
         last_seen = doc["last_seen"]
-        # pymongo returns naive UTC datetimes by default even though we
-        # stored timezone-aware ones — normalize before subtracting.
+        # pymongo returns naive UTC datetimes even though we stored
+        # timezone-aware ones — normalize before subtracting.
         if last_seen.tzinfo is None:
             last_seen = last_seen.replace(tzinfo=timezone.utc)
         age_seconds = (now - last_seen).total_seconds()
-        healthy = age_seconds < interval * STALE_MULTIPLIER
+        healthy = age_seconds < interval * HEARTBEAT_GRACE_PERIOD_MULTIPLIER
 
         all_healthy = all_healthy and healthy
         loops[doc["_id"]] = {
@@ -48,9 +47,6 @@ async def health(response: Response):
             "seconds_since_last_heartbeat": round(age_seconds, 1),
         }
 
-    # 503 on degraded, not just a JSON field, so container/orchestrator
-    # healthchecks (Docker, k8s) that check the HTTP status actually catch
-    # a dead pipeline instead of seeing a "successful" 200 either way.
     response.status_code = 200 if all_healthy else 503
 
     return {

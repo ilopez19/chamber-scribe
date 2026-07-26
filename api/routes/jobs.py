@@ -1,19 +1,16 @@
 from fastapi import APIRouter, HTTPException, Query
 from bson import ObjectId
 from shared.db.database import jobs_collection
+from api.serialization import serialize_document
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
 
-def _serialize(job: dict) -> dict:
-    """Convert MongoDB document to JSON-safe dict."""
-    job["id"] = str(job.pop("_id"))
-    return job
-
-
-@router.get("/summary")
+# Counts jobs grouped by status, plus a "total" key; statuses with zero
+# jobs are left out entirely rather than shown as 0.
+# Returns e.g. {"pending": 3, "transcribed": 128, "total": 145}.
+@router.get("/summary", summary="Job counts by status")
 async def get_summary():
-    """Count of jobs by status."""
     col = jobs_collection()
     statuses = ["pending", "downloading", "downloaded", "processing", "transcribed", "failed", "excluded"]
     summary = {}
@@ -25,14 +22,15 @@ async def get_summary():
     return summary
 
 
-@router.get("/")
+# Lists jobs, most recent first, optionally filtered by status and/or source.
+# Returns {total, skip, limit, jobs: [{id, status, source, metadata, ...}]}.
+@router.get("/", summary="List jobs")
 async def list_jobs(
         status: str = Query(None, description="Filter by status"),
         source: str = Query(None, description="Filter by source e.g. michigan_senate"),
         limit: int = Query(50, le=200),
         skip: int = Query(0),
 ):
-    """List jobs with optional filters."""
     col = jobs_collection()
     query = {}
     if status:
@@ -46,13 +44,14 @@ async def list_jobs(
         "total": await col.count_documents(query),
         "skip": skip,
         "limit": limit,
-        "jobs": [_serialize(j) for j in jobs],
+        "jobs": [serialize_document(j) for j in jobs],
     }
 
 
-@router.get("/{job_id}")
+# Gets a single job by its own Mongo ID.
+# Returns {id, status, source, video_url, metadata, retries, error, ...}.
+@router.get("/{job_id}", summary="Get a job by ID")
 async def get_job(job_id: str):
-    """Get a single job by ID."""
     col = jobs_collection()
     try:
         oid = ObjectId(job_id)
@@ -63,4 +62,4 @@ async def get_job(job_id: str):
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    return _serialize(job)
+    return serialize_document(job)

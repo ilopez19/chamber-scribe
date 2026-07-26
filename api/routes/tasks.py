@@ -1,16 +1,16 @@
 from fastapi import APIRouter, HTTPException, Query
 from bson import ObjectId
 from shared.db.database import tasks_collection
-from api.models.task import Task as TaskModel
+from api.serialization import serialize_document
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 
 
-
-
-@router.get("/summary")
+# Counts tasks grouped by status, plus a "total" key; statuses with zero
+# tasks are left out entirely rather than shown as 0.
+# Returns e.g. {"done": 128, "failed": 3, "total": 132}.
+@router.get("/summary", summary="Task counts by status")
 async def get_summary():
-    """Count of tasks by status."""
     col = tasks_collection()
     statuses = ["pending", "processing", "done", "failed"]
     summary = {}
@@ -22,7 +22,10 @@ async def get_summary():
     return summary
 
 
-@router.get("/")
+# Lists transcription attempt records, most recent first — each is one
+# attempt (a job can have several across retries), not the job itself.
+# Returns {total, skip, limit, tasks: [{id, job_id, status, engine, ...}]}.
+@router.get("/", summary="List transcription tasks")
 async def list_tasks(
         job_id: str = Query(None, description="Filter by job_id"),
         status: str = Query(None, description="Filter by status"),
@@ -30,7 +33,6 @@ async def list_tasks(
         limit: int = Query(50, le=200),
         skip: int = Query(0),
 ):
-    """List transcription attempt records, most recent first."""
     col = tasks_collection()
     query = {}
     if job_id:
@@ -46,13 +48,14 @@ async def list_tasks(
         "total": await col.count_documents(query),
         "skip": skip,
         "limit": limit,
-        "tasks": [_serialize(t) for t in tasks],
+        "tasks": [serialize_document(t) for t in tasks],
     }
 
 
-@router.get("/{task_id}")
+# Gets a single transcription attempt record by its own Mongo ID.
+# Returns {id, job_id, status, retries, error, result_id, ...}.
+@router.get("/{task_id}", summary="Get a task by ID")
 async def get_task(task_id: str):
-    """Get a single task attempt by ID."""
     col = tasks_collection()
     try:
         oid = ObjectId(task_id)
@@ -63,14 +66,4 @@ async def get_task(task_id: str):
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    return _serialize(task)
-
-
-def _serialize(task: dict) -> dict:
-    """Convert MongoDB document to JSON-safe dict without mutating input."""
-    d = dict(task)
-    d["id"] = str(d.pop("_id"))
-    try:
-        return TaskModel(**d).dict()
-    except Exception:
-        return d
+    return serialize_document(task)

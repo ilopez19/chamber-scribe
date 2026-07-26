@@ -1,21 +1,18 @@
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Path, Query
 from bson import ObjectId
 from shared.db.database import transcripts_collection, jobs_collection
+from api.serialization import serialize_document
 
 router = APIRouter(prefix="/transcripts", tags=["transcripts"])
 
 
-def _serialize(doc: dict) -> dict:
-    doc["id"] = str(doc.pop("_id"))
-    return doc
-
-
-@router.get("/")
+# Lists all transcripts, most recent first.
+# Returns {total, skip, limit, transcripts: [{id, job_id, text, segments, ...}]}.
+@router.get("/", summary="List transcripts")
 async def list_transcripts(
         limit: int = Query(50, le=200),
         skip: int = Query(0),
 ):
-    """List all transcripts."""
     col = transcripts_collection()
     cursor = col.find().skip(skip).limit(limit).sort("created_at", -1)
     docs = await cursor.to_list(length=limit)
@@ -23,11 +20,13 @@ async def list_transcripts(
         "total": await col.count_documents({}),
         "skip": skip,
         "limit": limit,
-        "transcripts": [_serialize(d) for d in docs],
+        "transcripts": [serialize_document(d) for d in docs],
     }
 
 
-@router.get("/search")
+# Full-text search over transcript text, ranked by relevance.
+# Returns {query, results, transcripts: [...]}.
+@router.get("/search", summary="Search transcripts")
 async def search_transcripts(
         q: str = Query(..., description="Search term"),
         limit: int = Query(20, le=100),
@@ -38,12 +37,17 @@ async def search_transcripts(
         {"score": {"$meta": "textScore"}}
     ).sort([("score", {"$meta": "textScore"})]).limit(limit)
     docs = await cursor.to_list(length=limit)
-    return {"query": q, "results": len(docs), "transcripts": [_serialize(d) for d in docs]}
+    return {"query": q, "results": len(docs), "transcripts": [serialize_document(d) for d in docs]}
 
 
-@router.get("/{job_id}")
-async def get_transcript(job_id: str):
-    """Get transcript for a specific job."""
+# Gets a transcript, looked up by its own ID first, then by job_id; also
+# enriches the response with job_title/job_source/original_date from the
+# parent job, when it still exists.
+# Returns {id, job_id, text, segments, engine, job_title, ...}.
+@router.get("/{job_id}", summary="Get a transcript")
+async def get_transcript(
+        job_id: str = Path(..., description="Either the transcript's own ID or the ID of the job it belongs to — both are accepted."),
+):
     col = transcripts_collection()
     try:
         oid = ObjectId(job_id)
@@ -67,4 +71,4 @@ async def get_transcript(job_id: str):
         doc["job_source"] = job.get("source")
         doc["original_date"] = job.get("metadata", {}).get("original_date")
 
-    return _serialize(doc)
+    return serialize_document(doc)

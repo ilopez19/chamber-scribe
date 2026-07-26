@@ -7,8 +7,7 @@
 #                 only through MongoDB, including /health's heartbeat reads)
 #   Diagram:      design.svg
 # ═══════════════════════════════════════════════════════════════════════
-"""FastAPI app — see routes/ for one file per resource (jobs, transcripts,
-tasks, health)."""
+# FastAPI app — see routes/ for one file per resource (jobs, transcripts, tasks, health).
 
 from fastapi import FastAPI
 from api.routes import jobs, transcripts, tasks, health
@@ -31,6 +30,9 @@ async def startup():
     await ping()
 
 
-@app.get("/")
+# Bare liveness check for the API process itself — always 200 as long as
+# the API is up, regardless of pipeline/Mongo state. See /health for the
+# real check across the whole system. Returns e.g. {"status": "ok", "service": "chamber-scribe"}.
+@app.get("/", summary="Service info")
 async def root():
     return {"status": "ok", "service": "chamber-scribe"}
