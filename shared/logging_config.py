@@ -24,6 +24,17 @@ def configure_logging() -> None:
         except (AttributeError, ValueError):
             pass
 
+    # reconfigure() above only fixes what Python writes — if the console
+    # itself is still on a legacy codepage (cp1252 etc.), it renders those
+    # correct UTF-8 bytes as garbage (e.g. "â€”" instead of "—"). Switching
+    # the console's own output codepage fixes the display too.
+    if sys.platform.startswith("win"):
+        try:
+            import ctypes
+            ctypes.windll.kernel32.SetConsoleOutputCP(65001)
+        except Exception:
+            pass
+
     level_name = os.environ.get("LOG_LEVEL", "INFO").upper()
     level = getattr(logging, level_name, logging.INFO)
 
