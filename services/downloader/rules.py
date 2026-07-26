@@ -16,6 +16,7 @@ class DownloadPlan:
 
     def __init__(self):
         self.downloads = []  # list of {url, destination, strategy}
+        self.not_ready = False  # True = temporary skip, retry later (vs. a permanent exclusion)
 
     # Adds one download action to the plan.
     def add(self, url: str, destination: str, strategy: str):
@@ -29,6 +30,11 @@ class DownloadPlan:
     # an empty plan as a signal to skip the job.
     def is_empty(self) -> bool:
         return len(self.downloads) == 0
+
+    # Marks this empty plan as temporary — the downloader should treat it
+    # like a retryable failure, not a permanent exclusion.
+    def mark_not_ready(self) -> None:
+        self.not_ready = True
 
 
 # Decides what to download per job. Senate: captioned -> VTT only,
@@ -58,6 +64,16 @@ class DownloadRules:
             # getLive/infoLive API, so they're skipped rather than guessed at.
             if title.lower().startswith("live stream") or title.strip().lower() in ("", "untitled"):
                 logger.info(f"[rules] Senate — skipping live-channel entry (no stable recording): {title or 'untitled'}")
+                return plan
+
+            # The portal's own transcoding can lag behind discovery — a video
+            # found by the scraper doesn't always have a real file at its HLS/
+            # caption URL yet (CloudFront 403s on a not-yet-published key).
+            # Defaults to True (attempt download) if the field is missing,
+            # rather than silently never downloading a job with incomplete metadata.
+            if not metadata.get("transcoded", True):
+                logger.info(f"[rules] Senate — not yet transcoded, will retry later: {title or portal_id}")
+                plan.mark_not_ready()
                 return plan
 
             if captioned:

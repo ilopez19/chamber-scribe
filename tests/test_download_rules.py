@@ -5,11 +5,11 @@
 from services.downloader.rules import DownloadRules
 
 
-def _senate_job(portal_id="abc123", captioned=False, title="Committee Hearing"):
+def _senate_job(portal_id="abc123", captioned=False, title="Committee Hearing", transcoded=True):
     return {
         "source": "michigan_senate",
         "video_url": f"https://example.cloudfront.net/outputs/{portal_id}/Default/HLS/out.m3u8",
-        "metadata": {"portal_id": portal_id, "captioned": captioned, "title": title},
+        "metadata": {"portal_id": portal_id, "captioned": captioned, "title": title, "transcoded": transcoded},
     }
 
 
@@ -62,6 +62,23 @@ class TestSenateRules:
         job["metadata"]["portal_id"] = None
         plan = DownloadRules.build_plan(job)
         assert plan.is_empty()
+
+    def test_not_yet_transcoded_produces_empty_retryable_plan(self):
+        plan = DownloadRules.build_plan(_senate_job(transcoded=False))
+        assert plan.is_empty()
+        assert plan.not_ready is True
+
+    def test_transcoded_true_is_not_marked_not_ready(self):
+        plan = DownloadRules.build_plan(_senate_job(transcoded=True))
+        assert not plan.is_empty()
+        assert plan.not_ready is False
+
+    def test_missing_transcoded_field_defaults_to_ready(self):
+        job = _senate_job()
+        del job["metadata"]["transcoded"]
+        plan = DownloadRules.build_plan(job)
+        assert not plan.is_empty()
+        assert plan.not_ready is False
 
 
 class TestHouseRules:

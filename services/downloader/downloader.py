@@ -71,6 +71,20 @@ async def _download_job(job: dict, collection) -> None:
     plan = DownloadRules.build_plan(job)
 
     if plan.is_empty():
+        if plan.not_ready:
+            # Temporary (e.g. not yet transcoded by the source portal) —
+            # treated like a normal retryable failure so claim_jobs() picks
+            # it back up on its own, instead of EXCLUDED's permanent skip.
+            new_retries = retries + 1
+            logger.info(f"[downloader] Not ready yet, will retry: {title}")
+            await _update_job(collection, job_id, {
+                "status": JobStatus.FAILED,
+                "failed_stage": "download",
+                "error": "Video not yet available from the source portal",
+                "retries": new_retries,
+            })
+            return
+
         # An empty plan means rules.py deliberately skipped this job
         # (unknown source, or a business rule like the live-channel
         # exclusion) — not a failure, so it's EXCLUDED, not FAILED.
