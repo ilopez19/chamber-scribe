@@ -1,14 +1,20 @@
 from fastapi import APIRouter, HTTPException, Query
 from bson import ObjectId
 from shared.db.database import tasks_collection
+from api.models.task import Task as TaskModel
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 
 
 def _serialize(task: dict) -> dict:
-    """Convert MongoDB document to JSON-safe dict."""
-    task["id"] = str(task.pop("_id"))
-    return task
+    """Convert MongoDB document to JSON-safe dict without mutating input."""
+    doc = dict(task)
+    doc["id"] = str(doc.pop("_id"))
+    try:
+        # Validate/normalize via odmantic model (allows extra fields)
+        return TaskModel(**doc).dict()
+    except Exception:
+        return doc
 
 
 @router.get("/summary")
