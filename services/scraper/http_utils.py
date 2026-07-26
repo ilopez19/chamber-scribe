@@ -44,6 +44,7 @@ async def fetch_with_retry(
     url: str,
     max_retries: int = MAX_RETRIES,
     retry_delay: float = RETRY_DELAY,
+    method: str = "GET",
     **kwargs
 ) -> Optional[httpx.Response]:
     """
@@ -54,7 +55,9 @@ async def fetch_with_retry(
         url: URL to fetch
         max_retries: Number of retry attempts
         retry_delay: Initial delay between retries (doubles each attempt)
-        **kwargs: Additional arguments for client.get()
+        method: HTTP method to use (default GET) — e.g. the Senate portal's
+            API requires POST with a JSON body, not a GET with query params.
+        **kwargs: Additional arguments for client.request() (json=, headers=, params=, etc.)
 
     Returns:
         Response object or None if all retries failed
@@ -65,7 +68,7 @@ async def fetch_with_retry(
     delay = retry_delay
     for attempt in range(max_retries + 1):
         try:
-            response = await client.get(url, **kwargs)
+            response = await client.request(method, url, **kwargs)
             response.raise_for_status()
             return response
         except (httpx.RequestError, httpx.HTTPStatusError) as e:

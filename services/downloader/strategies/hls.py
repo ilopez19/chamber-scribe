@@ -1,5 +1,6 @@
 import asyncio
 import os
+from services.downloader.config import DOWNLOAD_TIMEOUT
 from services.downloader.strategies.base import BaseDownloadStrategy
 from shared.logging_config import get_logger
 
@@ -36,6 +37,7 @@ class HLSDownloadStrategy(BaseDownloadStrategy):
             destination,
         ]
 
+        process = None
         try:
             process = await asyncio.create_subprocess_exec(
                 *command,
@@ -43,7 +45,24 @@ class HLSDownloadStrategy(BaseDownloadStrategy):
                 stderr=asyncio.subprocess.PIPE,
             )
 
-            stdout, stderr = await process.communicate()
+            try:
+                # Without a timeout, a stalled network read (dead
+                # connection, a manifest that never finishes, a URL that no
+                # longer serves valid HLS) leaves ffmpeg running forever —
+                # and since nothing else races this await, the whole
+                # downloader_loop cycle (and therefore its heartbeat) hangs
+                # with it. This is exactly what a stuck-looking
+                # downloader_loop in /health with a growing
+                # seconds_since_last_heartbeat usually means.
+                stdout, stderr = await asyncio.wait_for(
+                    process.communicate(), timeout=DOWNLOAD_TIMEOUT
+                )
+            except asyncio.TimeoutError:
+                logger.error(f"[hls] ❌ FFmpeg timed out after {DOWNLOAD_TIMEOUT}s — killing: {url}")
+                process.kill()
+                await process.wait()
+                self._cleanup_partial(destination)
+                return False
 
             if process.returncode == 0:
                 size_mb = round(os.path.getsize(destination) / 1_000_000, 1)
@@ -52,6 +71,14 @@ class HLSDownloadStrategy(BaseDownloadStrategy):
             else:
                 error = stderr.decode()[-500:]
                 logger.error(f"[hls] ❌ FFmpeg failed: {error}")
+                # A non-zero exit can still leave a partial/corrupt file on
+                # disk (ffmpeg writes output incrementally before failing).
+                # Without removing it, the downloader's "skip if destination
+                # already exists" check (downloader.py's _download_job)
+                # would treat this failed attempt as a completed download
+                # forever, and Whisper would silently transcribe a
+                # truncated file instead of the job ever being retried.
+                self._cleanup_partial(destination)
                 return False
 
         except FileNotFoundError:
@@ -59,4 +86,16 @@ class HLSDownloadStrategy(BaseDownloadStrategy):
             return False
         except Exception as e:
             logger.error(f"[hls] ❌ Unexpected error: {e}")
+            if process is not None and process.returncode is None:
+                process.kill()
+                await process.wait()
+            self._cleanup_partial(destination)
             return False
+
+    @staticmethod
+    def _cleanup_partial(destination: str) -> None:
+        if os.path.exists(destination):
+            try:
+                os.remove(destination)
+            except OSError:
+                pass

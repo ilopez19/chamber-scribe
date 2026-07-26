@@ -42,6 +42,7 @@ class HousePortalDetector(HTTPDetector):
         client = await self.get_client()
 
         try:
+            #
             response = await fetch_with_retry(client, LISTING_URL)
             soup = BeautifulSoup(response.text, "html.parser")
 

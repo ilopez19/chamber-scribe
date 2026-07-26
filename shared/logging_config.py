@@ -20,6 +20,7 @@ be raised without a code change: LOG_LEVEL=DEBUG python main.py
 
 import logging
 import os
+import sys
 
 _configured = False
 
@@ -32,6 +33,22 @@ def configure_logging() -> None:
     if _configured:
         return
 
+    # Windows gives a redirected (non-console) stdout/stderr the legacy
+    # code page (e.g. cp1252) instead of UTF-8, and this codebase logs
+    # emoji (checkmark/cross marks) in ordinary success/failure lines
+    # throughout the download strategies and elsewhere. Without this, every
+    # such line fails to encode, gets silently dropped by the logging
+    # module, and a "--- Logging error ---" traceback gets dumped to
+    # stderr instead of the actual message — which is what showed up in
+    # logs\pipeline.err.log in place of a plain "Connected to MongoDB"
+    # line. reconfigure() is best-effort since not every stream type
+    # supports it (e.g. some test/CI redirections).
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
     level_name = os.environ.get("LOG_LEVEL", "INFO").upper()
     level = getattr(logging, level_name, logging.INFO)
 
@@ -39,6 +56,16 @@ def configure_logging() -> None:
         level=level,
         format="%(asctime)s %(levelname)-8s %(name)s: %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
+        # logging.basicConfig() defaults to a StreamHandler on stderr, not
+        # stdout — which meant every logger.info/warning/error call in the
+        # whole pipeline was silently landing in logs\pipeline.err.log
+        # while logs\pipeline.out.log (what start.ps1/start.sh redirect
+        # stdout to, and what the README and normal log-checking advice
+        # point at) stayed empty. Pointed at stdout explicitly so the
+        # out/err file split actually matches its intent: .out.log for
+        # normal operation, .err.log reserved for a genuine crash the
+        # interpreter itself prints outside of logging entirely.
+        stream=sys.stdout,
     )
     _configured = True
 

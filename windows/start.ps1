@@ -50,5 +50,7 @@ Write-Host "API started (PID $($api.Id)) - http://localhost:8000" -ForegroundCol
 Write-Host ""
 Write-Host "Both running in the background."
 Write-Host "  Check health:  curl http://localhost:8000/health"
+Write-Host "  View logs:     Get-Content .\logs\pipeline.out.log -Wait -Tail 50"
+Write-Host "                 Get-Content .\logs\api.out.log -Wait -Tail 50"
 Write-Host "  Stop:          .\windows\stop.ps1"
 Write-Host "  Restart:       .\windows\restart.ps1"

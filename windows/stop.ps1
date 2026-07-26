@@ -22,8 +22,14 @@ function Stop-Tracked($name, $pidFile) {
     $targetId = Get-Content $pidFile -ErrorAction SilentlyContinue
     $proc = if ($targetId) { Get-Process -Id $targetId -ErrorAction SilentlyContinue } else { $null }
     if ($proc) {
-        Stop-Process -Id $targetId -Force
-        Write-Host "Stopped $name (PID $targetId)." -ForegroundColor Green
+        # taskkill /T kills the whole process tree, not just this PID.
+        # Plain Stop-Process only kills the tracked PID itself, leaving any
+        # child it spawned (e.g. an in-progress ffmpeg download) running as
+        # an orphan that still holds its output file open - which then
+        # blocks things like `scripts.db_utils clear-files` from deleting
+        # it even after this script reports the pipeline as stopped.
+        & taskkill /PID $targetId /T /F | Out-Null
+        Write-Host "Stopped $name (PID $targetId, including any child processes)." -ForegroundColor Green
     } else {
         Write-Host "$name PID file exists but that process isn't running (already stopped)." -ForegroundColor Yellow
     }

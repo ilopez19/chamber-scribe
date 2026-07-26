@@ -1,5 +1,6 @@
 import asyncio
 import os
+from services.downloader.config import DOWNLOAD_TIMEOUT
 from services.downloader.strategies.base import BaseDownloadStrategy
 from shared.logging_config import get_logger
 
@@ -45,6 +46,7 @@ class HTTPAudioExtractStrategy(BaseDownloadStrategy):
             destination,
         ]
 
+        process = None
         try:
             process = await asyncio.create_subprocess_exec(
                 *command,
@@ -52,7 +54,21 @@ class HTTPAudioExtractStrategy(BaseDownloadStrategy):
                 stderr=asyncio.subprocess.PIPE,
             )
 
-            stdout, stderr = await process.communicate()
+            try:
+                # See hls.py's identical guard: without a timeout here, a
+                # stalled read from a flaky/slow House video URL leaves
+                # ffmpeg running forever, and since the downloader_loop only
+                # heartbeats after this whole call returns, the loop looks
+                # dead in /health even though the process is still alive.
+                stdout, stderr = await asyncio.wait_for(
+                    process.communicate(), timeout=DOWNLOAD_TIMEOUT
+                )
+            except asyncio.TimeoutError:
+                logger.error(f"[http_audio] ❌ FFmpeg timed out after {DOWNLOAD_TIMEOUT}s — killing: {url}")
+                process.kill()
+                await process.wait()
+                self._cleanup_partial(destination)
+                return False
 
             if process.returncode == 0:
                 size_mb = round(os.path.getsize(destination) / 1_000_000, 1)
@@ -61,6 +77,10 @@ class HTTPAudioExtractStrategy(BaseDownloadStrategy):
             else:
                 error = stderr.decode()[-500:]
                 logger.error(f"[http_audio] ❌ FFmpeg failed: {error}")
+                # See hls.py: a failed run can still leave a partial file
+                # that the downloader's "already on disk" check would
+                # otherwise treat as a completed download forever.
+                self._cleanup_partial(destination)
                 return False
 
         except FileNotFoundError:
@@ -68,4 +88,16 @@ class HTTPAudioExtractStrategy(BaseDownloadStrategy):
             return False
         except Exception as e:
             logger.error(f"[http_audio] ❌ Unexpected error: {e}")
+            if process is not None and process.returncode is None:
+                process.kill()
+                await process.wait()
+            self._cleanup_partial(destination)
             return False
+
+    @staticmethod
+    def _cleanup_partial(destination: str) -> None:
+        if os.path.exists(destination):
+            try:
+                os.remove(destination)
+            except OSError:
+                pass

@@ -36,7 +36,7 @@ from shared.db.database import jobs_collection, transcripts_collection, tasks_co
 from shared.db.models.job import JobStatus
 from shared.db.models.transcript import new_transcript
 from shared.db.models.task import new_task
-from services.transcriber.config import MIN_DURATION_SECONDS
+from services.transcriber.config import MIN_DURATION_SECONDS, TRANSCRIBE_TIMEOUT_SECONDS
 from services.transcriber.engines.whisper import WhisperEngine
 from services.transcriber.engines.vtt_engine import VTTEngine
 from shared.logging_config import get_logger
@@ -263,7 +263,20 @@ async def run_transcriptions() -> None:
             )
 
             try:
-                result = await engine.transcribe(audio_path)
+                # Bounded the same way hls.py bounds ffmpeg: a stuck decode
+                # (corrupt/truncated audio, or a genuine engine hang) would
+                # otherwise block this whole loop — and its heartbeat —
+                # forever. asyncio.TimeoutError falls through to the
+                # generic except below and is retried like any other
+                # transcription failure. Note: this cancels the *await*,
+                # not the underlying thread-pool work for Whisper (Python
+                # can't forcibly kill a running thread) — the abandoned
+                # attempt keeps running in the background until it
+                # finishes on its own, but the loop itself is freed up
+                # immediately instead of staying wedged.
+                result = await asyncio.wait_for(
+                    engine.transcribe(audio_path), timeout=TRANSCRIBE_TIMEOUT_SECONDS
+                )
 
                 transcript_doc = new_transcript(
                     job_id=str(job_id),

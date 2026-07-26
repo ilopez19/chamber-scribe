@@ -11,8 +11,15 @@ set -uo pipefail
 
 # Lives in macos-linux/ but operates on the repo root - works whether it's
 # invoked as ./macos-linux/install.sh from the root, or run directly from
-# inside macos-linux/.
-cd "$(dirname "${BASH_SOURCE[0]}")/.."
+# inside macos-linux/. Captured once, before cd'ing away, and reused at the
+# bottom of this script to call start.sh - re-deriving it from BASH_SOURCE a
+# second time after the cd below would resolve against the new (repo root)
+# working directory instead of this script's own directory, landing on the
+# wrong path (e.g. repo-root/start.sh instead of repo-root/macos-linux/start.sh)
+# whenever this script is invoked as a bare `./install.sh` from inside
+# macos-linux/ itself.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR/.."
 
 step() { echo ""; echo "== $1 =="; }
 has() { command -v "$1" >/dev/null 2>&1; }
@@ -151,7 +158,6 @@ step "Setup complete"
 echo "Sanity check the database connection:  venv/bin/python3 -m scripts.db_utils summary"
 echo ""
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 read -r -p "Start Chamber Scribe now (pipeline + API in the background)? (y/N) " startNow
 if [ "$startNow" = "y" ] || [ "$startNow" = "Y" ]; then
     "$SCRIPT_DIR/start.sh"
