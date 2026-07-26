@@ -83,9 +83,12 @@ class SenatePortalDetector(HTTPDetector):
         # scrape run (IDs are portal-provided). It's reset each run.
         self._dedup = DeduplicationTracker()
 
+    SOURCE_NAME = "michigan_senate"
+    DISPLAY_NAME = "Michigan Senate"
+
     @property
     def source_name(self) -> str:
-        return "michigan_senate"
+        return self.SOURCE_NAME
 
     async def get_new_videos(self) -> list[dict]:
         """Fetch all videos via pagination, deduplicate, and return records.
@@ -102,7 +105,7 @@ class SenatePortalDetector(HTTPDetector):
         # API) — confirmed from the real front-end's request body.
         page = 1
         while True:
-            logger.info(f"[{self.source_name}] Fetching page {page}")
+            logger.info(f"[{self.SOURCE_NAME}] Fetching page {page}")
             try:
                 body = {"_id": SENATE_CHANNEL_ID, "page": page, "results": PAGE_SIZE}
                 response = await fetch_with_retry(
@@ -121,7 +124,7 @@ class SenatePortalDetector(HTTPDetector):
                 items = data.get("allFiles", []) if isinstance(data, dict) else data
                 if not items:
                     # No more items — we've reached the end
-                    logger.info(f"[{self.source_name}] Pagination complete (no items on page {page})")
+                    logger.info(f"[{self.SOURCE_NAME}] Pagination complete (no items on page {page})")
                     break
 
                 # Deduplicate items within this run
@@ -146,7 +149,7 @@ class SenatePortalDetector(HTTPDetector):
 
                     metadata = MetadataExtractor.normalize_portal_metadata(
                         item=item,
-                        source_name=self.source_name,
+                        source_name=self.SOURCE_NAME,
                         title=filename,
                         portal_id=portal_id,
                         original_date=item.get("original_date"),
@@ -166,14 +169,14 @@ class SenatePortalDetector(HTTPDetector):
 
                     videos.append(video_record)
                     duration_mins = metadata.get("duration_mins", 0)
-                    logger.info(f"[{self.source_name}] Found: {filename} ({duration_mins} mins)")
+                    logger.info(f"[{self.SOURCE_NAME}] Found: {filename} ({duration_mins} mins)")
 
                 # Move to next page
                 page += 1
 
             except Exception as e:
                 # Log the error but stop pagination (assume API is unhealthy)
-                logger.warning(f"[{self.source_name}] Failed on page {page}: {e}")
+                logger.warning(f"[{self.SOURCE_NAME}] Failed on page {page}: {e}")
                 break
 
         logger.info(f"[{self.source_name}] Total unique videos found: {len(videos)}")

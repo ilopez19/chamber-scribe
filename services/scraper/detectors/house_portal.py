@@ -25,9 +25,12 @@ class HousePortalDetector(HTTPDetector):
         super().__init__(timeout=30, verify=False)
         self._dedup = DeduplicationTracker()
 
+    SOURCE_NAME = "michigan_house"
+    DISPLAY_NAME = "Michigan House"
+
     @property
     def source_name(self) -> str:
-        return "michigan_house"
+        return self.SOURCE_NAME
 
     async def get_new_videos(self) -> list[dict]:
         """Scrape the public video archive page and return unique video records.
@@ -42,7 +45,6 @@ class HousePortalDetector(HTTPDetector):
         client = await self.get_client()
 
         try:
-            #
             response = await fetch_with_retry(client, LISTING_URL)
             soup = BeautifulSoup(response.text, "html.parser")
 
@@ -83,7 +85,7 @@ class HousePortalDetector(HTTPDetector):
                 # detail page, if one exists — not attempted here.
                 metadata = MetadataExtractor.normalize_portal_metadata(
                     item={},
-                    source_name=self.source_name,
+                    source_name=self.SOURCE_NAME,
                     title=filename.replace(".mp4", ""),
                     portal_id=filename.replace(".mp4", ""),
                     date_text=date_text,
@@ -96,11 +98,11 @@ class HousePortalDetector(HTTPDetector):
                 )
 
                 videos.append(video_record)
-                logger.info(f"[{self.source_name}] Found: {filename} — {date_text}")
+                logger.info(f"[{self.SOURCE_NAME}] Found: {filename} — {date_text}")
 
         except Exception as e:
             # Surface parsing failures but don't crash the whole scraper
-            logger.warning(f"[{self.source_name}] Scrape failed: {e}")
+            logger.warning(f"[{self.SOURCE_NAME}] Scrape failed: {e}")
         finally:
             await self.close_client()
         logger.info(f"[{self.source_name}] Total unique videos found: {len(videos)}")
