@@ -6,19 +6,6 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
-  # Manual only (Actions tab -> CI -> Run workflow) — there's no push/PR
-  # trigger for deploy since there's no live cluster to auto-deploy to
-  # yet. See the "deploy" job below and the README's "Deploying via
-  # GitHub Actions" section.
-  workflow_dispatch:
-    inputs:
-      image_tag:
-        description: "Image tag to deploy (must already exist in GHCR)"
-        required: false
-        default: "latest"
-
-env:
-  REGISTRY: ghcr.io
 
 jobs:
   test:
@@ -38,42 +25,3 @@ jobs:
       - run: pip install -r requirements-dev.txt
 
       - run: pytest
-
-  # Deploys an already-built image (from a prior push to main) to whatever
-  # cluster the KUBECONFIG secret points at. Manual-only (see
-  # workflow_dispatch above) — not wired to any real cluster yet. To use
-  # this for real: add a KUBECONFIG repo secret (Settings -> Secrets and
-  # variables -> Actions), base64 of a working kubeconfig for your
-  # cluster, e.g. `cat ~/.kube/config | base64 -w0`. Until that secret
-  # exists, the "Verify KUBECONFIG secret is set" step below fails with a
-  # clear message instead of a confusing helm connection error.
-  deploy:
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: azure/setup-helm@v4
-        with:
-          version: v3.16.3
-
-      - name: Verify KUBECONFIG secret is set
-        run: |
-          if [ -z "${{ secrets.KUBECONFIG }}" ]; then
-            echo "::error::KUBECONFIG secret is not set. Add it under Settings -> Secrets and variables -> Actions, then re-run this workflow. See README's 'Deploying via GitHub Actions' section."
-            exit 1
-          fi
-
-      - name: Write kubeconfig
-        run: |
-          mkdir -p "$HOME/.kube"
-          echo "${{ secrets.KUBECONFIG }}" | base64 -d > "$HOME/.kube/config"
-
-      - name: Compute lowercase image name
-        run: echo "IMAGE_NAME=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
-
-      - name: Deploy with Helm
-        run: |
-          helm upgrade --install chamber-scribe helm/chamber-scribe \
-            --set image.repository=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }} \
-            --set image.tag=${{ inputs.image_tag }}
